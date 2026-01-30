@@ -1,0 +1,20 @@
+# ============================================================================
+# Enterprise Foundry - ACA Environment Module Configuration
+# ============================================================================
+# Copy this file to terraform.tfvars and fill in your values
+# ============================================================================
+
+# ======= Subscription & Location =======
+subscription_id = "<your-azure-subscription-id>"
+location        = "westeurope"
+
+# ======= Resource Groups =======
+rg_net = "rg-foundry-sbx-net"
+rg_app = "rg-foundry-sbx-app"
+
+# ======= Network References (must match network module) =======
+vnet_name  = "vnet-foundry-sbx"
+subnet_aca = "snet-aca-infra"
+
+# ======= ACA Environment =======
+aca_env_name = "cae-foundry-sbx"

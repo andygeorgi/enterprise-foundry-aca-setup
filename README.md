@@ -1,0 +1,254 @@
+# Enterprise Foundry - Azure Container Apps Sandbox Setup
+
+A Terraform-based infrastructure setup for deploying Azure Container Apps (ACA) with VNet integration, private endpoints, and hybrid connectivity simulation.
+
+## 🏗️ Architecture
+
+![Architecture Diagram](architecture_diagram.svg)
+
+### Components
+
+| Component | Description |
+|-----------|-------------|
+| **Hub VNet** | Simulates corporate hub network (Gateway & Firewall subnets ready) |
+| **Sandbox VNet** | Contains ACA environment with VNet injection |
+| **On-Prem Simulation VNet** | Ubuntu VM with nginx simulating on-premises servers |
+| **Azure Container Apps** | VNet-injected container environment with internal load balancer |
+| **Private Endpoints** | Secure access to Storage Account and Container Registry |
+| **Private DNS Zones** | DNS resolution for privatelink endpoints |
+| **Direct VNet Peering** | Hub-spoke topology with direct spoke-to-spoke peering |
+
+### Network Topology
+
+```
+                    ┌─────────────────┐
+                    │    Hub VNet     │
+                    │   10.0.0.0/16   │
+                    └────────┬────────┘
+                             │
+              ┌──────────────┼──────────────┐
+              │ VNet Peering │ VNet Peering │
+              ▼              │              ▼
+    ┌─────────────────┐      │     ┌─────────────────┐
+    │  Sandbox VNet   │◄─────┴────►│  On-Prem Sim    │
+    │  10.7.0.0/26    │  Direct    │  10.7.1.0/24    │
+    │                 │  Peering   │                 │
+    │  ┌───────────┐  │            │  ┌───────────┐  │
+    │  │ ACA Env   │  │            │  │ Ubuntu VM │  │
+    │  │ /27 subnet│  │            │  │  nginx    │  │
+    │  └───────────┘  │            │  └───────────┘  │
+    │  ┌───────────┐  │            └─────────────────┘
+    │  │    PEs    │  │
+    │  │ /28 subnet│  │
+    │  └───────────┘  │
+    └─────────────────┘
+```
+
+> **Important**: VNet peering is non-transitive! Traffic cannot flow Hub→Sandbox→Hub→OnPrem. Direct peering between Sandbox and On-Prem VNets is required for ACA to reach simulated on-premises resources.
+
+## 📋 Prerequisites
+
+- Azure subscription with Owner/Contributor access
+- WSL2 (Ubuntu) or Linux environment
+- Azure CLI
+- Terraform >= 1.5.0
+
+### Install Prerequisites
+
+```bash
+./00_install_prerequisites.sh
+```
+
+This script installs or upgrades:
+- Azure CLI
+- Terraform
+
+## 🚀 Quick Start
+
+### 1. Clone and Configure
+
+```bash
+git clone <repository-url>
+cd enterprise-foundry-aca-setup
+
+# Copy example configs and customize
+cp terraform/network/terraform.tfvars.example terraform/network/terraform.tfvars
+cp terraform/aca_env/terraform.tfvars.example terraform/aca_env/terraform.tfvars
+cp terraform/container_apps/terraform.tfvars.example terraform/container_apps/terraform.tfvars
+
+# Edit each terraform.tfvars with your values
+```
+
+### 2. Login to Azure
+
+```bash
+az login
+az account set --subscription "<your-subscription-id>"
+```
+
+### 3. Deploy Infrastructure
+
+Use the interactive Terraform executor:
+
+```bash
+./01_terraform.sh
+```
+
+**Menu options:**
+- `1-3` - Toggle module selection
+- `a` - Select all modules
+- `p` - Plan (preview changes)
+- `d` - Deploy selected modules
+- `x` - Destroy selected modules
+- `q` - Quit
+
+**Deployment order** (handled automatically):
+1. `network` - VNets, VMs, Storage, ACR, Private Endpoints
+2. `aca_env` - Azure Container Apps Environment
+3. `container_apps` - Test container applications
+
+## 📁 Project Structure
+
+```
+enterprise-foundry-aca-setup/
+├── 00_install_prerequisites.sh     # Install Azure CLI + Terraform
+├── 01_terraform.sh                 # Interactive deployment script
+├── architecture_diagram.svg        # Visual architecture diagram
+├── terraform/
+│   ├── network/                    # Core networking infrastructure
+│   │   ├── main.tf
+│   │   ├── variables.tf
+│   │   ├── outputs.tf
+│   │   └── terraform.tfvars.example
+│   ├── aca_env/                    # Container Apps Environment
+│   │   ├── main.tf
+│   │   ├── variables.tf
+│   │   ├── outputs.tf
+│   │   └── terraform.tfvars.example
+│   └── container_apps/             # Test container applications
+│       ├── main.tf
+│       ├── variables.tf
+│       ├── outputs.tf
+│       └── terraform.tfvars.example
+└── tools/
+    ├── monitor_onprem.sh           # Monitor VM connectivity test
+    ├── monitor_storage.sh          # Monitor storage PE test
+    └── generate_architecture_diagram.sh
+```
+
+## 🧪 Connectivity Tests
+
+The `container_apps` module deploys two test applications:
+
+### On-Prem Connectivity Test
+
+Tests HTTP connectivity from ACA to the simulated on-premises VM.
+
+```bash
+./tools/monitor_onprem.sh
+```
+
+**Output:**
+```
+✅ [2024-01-30 12:00:00] onprem 10.7.1.4 port 80 TCP=FAIL HTTP=OK
+✅ [2024-01-30 12:00:00] onprem 10.7.1.4 port 443 TCP=FAIL HTTP=OK
+```
+
+> **Note:** Only HTTP connectivity is tested (not raw TCP sockets). This is intentional - the test uses `curl` to verify HTTP-level connectivity, which is the typical use case for container apps communicating with backend services. The `TCP=FAIL` is expected because Alpine's `/dev/tcp` isn't available; the `HTTP=OK` confirms actual connectivity works.
+
+### Storage Private Endpoint Test
+
+Tests connectivity to Azure Storage via Private Endpoint using managed identity.
+
+```bash
+./tools/monitor_storage.sh
+```
+
+**Output:**
+```
+✅ [2024-01-30 12:00:00] Storage: mystorageaccount.blob.core.windows.net
+   Private IP: 10.7.0.36 | Response: 299 bytes
+```
+
+## 🔧 Configuration Reference
+
+### Required Variables
+
+| Module | Variable | Description |
+|--------|----------|-------------|
+| All | `subscription_id` | Azure Subscription ID |
+| All | `location` | Azure region (e.g., westeurope) |
+| All | `rg_net` | Network resource group name |
+| All | `rg_app` | Application resource group name |
+| network | `storage_account_name` | Globally unique storage account name |
+| network | `acr_name` | Globally unique container registry name |
+| aca_env | `vnet_name` | Sandbox VNet name (from network module) |
+| aca_env | `subnet_aca` | ACA subnet name (from network module) |
+| container_apps | `aca_env_name` | ACA environment name (from aca_env module) |
+| container_apps | `storage_account_name` | Storage account name (from network module) |
+
+### Network Address Spaces
+
+| Network | CIDR | Purpose |
+|---------|------|---------|
+| Hub VNet | 10.0.0.0/16 | Corporate hub simulation |
+| Sandbox VNet | 10.7.0.0/26 | ACA workloads |
+| └─ ACA Subnet | 10.7.0.0/27 | Container Apps (min /27 required) |
+| └─ PE Subnet | 10.7.0.32/28 | Private Endpoints |
+| On-Prem VNet | 10.7.1.0/24 | On-premises simulation |
+
+## 🗑️ Cleanup
+
+Destroy in reverse order:
+
+```bash
+./01_terraform.sh
+# Select modules in reverse order: container_apps → aca_env → network
+# Press 'x' to destroy
+```
+
+Or manually:
+
+```bash
+cd terraform/container_apps && terraform destroy
+cd ../aca_env && terraform destroy
+cd ../network && terraform destroy
+```
+
+> **Note**: ACA environment deletion can take 15-30 minutes due to Azure internal cleanup processes.
+
+## ⚠️ Important Notes
+
+### VNet Peering is Non-Transitive
+
+Azure VNet peering does not allow transitive routing. If you have:
+- Hub ↔ Sandbox (peered)
+- Hub ↔ On-Prem (peered)
+
+Traffic from Sandbox **cannot** reach On-Prem via Hub. You need **direct peering** between Sandbox and On-Prem VNets.
+
+### ACA Subnet Requirements
+
+- Minimum subnet size: **/27** (32 addresses)
+- Must be delegated to `Microsoft.App/environments`
+- Cannot be shared with other resources
+
+### Managed Identity in ACA
+
+Container Apps use a different token endpoint than VMs:
+- ❌ `169.254.169.254` (VM metadata endpoint - doesn't work)
+- ✅ `$IDENTITY_ENDPOINT` with `$IDENTITY_HEADER` (ACA environment variables)
+
+## 📄 License
+
+MIT License - feel free to use and modify for your projects.
+
+## 🤝 Contributing
+
+1. Fork the repository
+2. Create a feature branch
+3. Submit a pull request
+
+---
+
+**Built with** ❤️ **using Terraform and Azure**

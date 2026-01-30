@@ -1,0 +1,24 @@
+# ============================================================================
+# Enterprise Foundry - Container Apps Module Configuration
+# ============================================================================
+# Copy this file to terraform.tfvars and fill in your values
+# ============================================================================
+
+# ======= Subscription & Location =======
+subscription_id = "<your-azure-subscription-id>"
+location        = "westeurope"
+
+# ======= Resource Groups =======
+rg_net = "rg-foundry-sbx-net"
+rg_app = "rg-foundry-sbx-app"
+
+# ======= ACA Environment (must exist - deploy aca_env module first) =======
+aca_env_name = "cae-foundry-sbx"
+
+# ======= Container Apps =======
+app_onprem_name     = "aca-onprem-connectivity-test"
+app_pe_storage_name = "aca-pe-storage-test"
+
+# ======= Storage Account (must match network module) =======
+storage_account_name   = "<your-storage-account-name>"
+storage_container_name = "test"
