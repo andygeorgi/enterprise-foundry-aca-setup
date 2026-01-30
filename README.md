@@ -52,6 +52,12 @@ A Terraform-based infrastructure setup for deploying Azure Container Apps (ACA) 
 - WSL2 (Ubuntu) or Linux environment
 - Azure CLI
 - Terraform >= 1.5.0
+- **Existing Hub VNet** (the network module peers to it but does not create it)
+
+> **Note:** The Hub VNet must already exist in your Azure environment. The Terraform `network` module creates VNet peerings to the Hub but does not provision the Hub itself. If you don't have a Hub VNet, you can either:
+> - Create one manually before deploying
+> - Modify the `network` module to create it
+> - Remove the Hub peering resources if not needed
 
 ### Install Prerequisites
 
