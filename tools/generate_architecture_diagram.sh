@@ -39,8 +39,8 @@ cat > "$OUTPUT_FILE" << 'SVGEOF'
   <rect width="1500" height="1000" fill="#f8f9fa"/>
   
   <!-- Title -->
-  <text x="450" y="35" text-anchor="middle" font-size="24" font-weight="bold" fill="#333">Enterprise Foundry - ACA Sandbox Architecture</text>
-  <text x="450" y="58" text-anchor="middle" font-size="14" fill="#666">Azure Container Apps with VNet Integration &amp; Private Endpoints</text>
+  <text x="750" y="35" text-anchor="middle" font-size="24" font-weight="bold" fill="#333">Enterprise Foundry - ACA Sandbox Architecture</text>
+  <text x="750" y="58" text-anchor="middle" font-size="14" fill="#666">Azure Container Apps with VNet Integration &amp; Private Endpoints</text>
 
   <!-- ==================== Hub VNet (Top Center) ==================== -->
   <g id="hub-vnet">
