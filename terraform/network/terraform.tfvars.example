@@ -1,0 +1,55 @@
+# ============================================================================
+# Enterprise Foundry - Network Module Configuration
+# ============================================================================
+# Copy this file to terraform.tfvars and fill in your values
+# ============================================================================
+
+# ======= Subscription & Location =======
+subscription_id = "<your-azure-subscription-id>"
+location        = "westeurope"  # or your preferred Azure region
+
+# ======= Resource Groups =======
+rg_net = "rg-foundry-sbx-net"
+rg_app = "rg-foundry-sbx-app"
+
+# ======= Hub VNet (simulates corporate hub) =======
+hub_vnet_name   = "vnet-hub"
+hub_vnet_prefix = "10.0.0.0/16"
+
+hub_snet_gw_name   = "GatewaySubnet"
+hub_snet_gw_prefix = "10.0.1.0/24"
+
+hub_snet_fw_name   = "AzureFirewallSubnet"
+hub_snet_fw_prefix = "10.0.2.0/24"
+
+# ======= Sandbox VNet =======
+sbx_vnet_name   = "vnet-foundry-sbx"
+sbx_vnet_prefix = "10.7.0.0/26"
+
+# ACA Infrastructure Subnet (minimum /27 required for VNet-injected ACA)
+sbx_snet_aca_name   = "snet-aca-infra"
+sbx_snet_aca_prefix = "10.7.0.0/27"
+
+# Private Endpoints Subnet
+sbx_snet_pe_name   = "snet-private-endpoints"
+sbx_snet_pe_prefix = "10.7.0.32/28"
+
+# ======= On-Prem Simulation VNet =======
+onprem_vnet_name   = "vnet-onprem-sim"
+onprem_vnet_prefix = "10.7.1.0/24"
+
+onprem_snet_name   = "snet-servers"
+onprem_snet_prefix = "10.7.1.0/24"
+
+# ======= On-Prem Simulation VM =======
+onprem_vm_name  = "vm-onprem-sim"
+onprem_vm_size  = "Standard_B1s"
+onprem_vm_admin = "azureuser"
+
+# ======= Storage Account =======
+# Must be globally unique, 3-24 chars, lowercase letters and numbers only
+storage_account_name = "<unique-storage-account-name>"
+
+# ======= Azure Container Registry =======
+# Must be globally unique, 5-50 chars, alphanumeric only
+acr_name = "<unique-acr-name>"

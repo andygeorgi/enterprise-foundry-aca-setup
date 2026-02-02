@@ -1,0 +1,37 @@
+################################################################################
+# AI Services Module - Example Variables
+# 
+# Copy this file to terraform.tfvars and adjust values as needed
+################################################################################
+
+# Azure Subscription
+subscription_id = "<your-azure-subscription-id>"
+
+# Resource Groups (must match network module)
+rg_net = "rg-foundry-sbx-net"
+rg_app = "rg-foundry-sbx-app"
+
+# Network Resources (must match network module)
+sbx_vnet_name    = "vnet-foundry-sbx"
+sbx_snet_pe_name = "snet-private-endpoints"
+
+# Hub VNet (for DNS zone linking via VPN/ExpressRoute)
+hub_vnet_rg   = "<your-hub-vnet-resource-group>"
+hub_vnet_name = "<your-hub-vnet-name>"
+
+# Storage Account (must match network module)
+storage_account_name = "<your-storage-account-name>"
+
+# Document Intelligence (must be globally unique)
+docintel_name = "docintel-foundry-sbx"
+
+# Azure AI Search (must be globally unique)
+search_name = "search-foundry-sbx"
+search_sku  = "basic"  # For sandbox; use 'standard' for production
+
+# Tags
+tags = {
+  environment = "sandbox"
+  project     = "foundry"
+  managedBy   = "terraform"
+}
