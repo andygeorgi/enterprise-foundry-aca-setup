@@ -1,0 +1,60 @@
+{
+	"name": "Terraform Development",
+	"image": "mcr.microsoft.com/devcontainers/base:ubuntu",
+	
+	"features": {
+		"ghcr.io/devcontainers/features/terraform:1": {
+			"version": "latest",
+			"tflint": "latest",
+			"terragrunt": "latest"
+		},
+		"ghcr.io/devcontainers/features/azure-cli:1": {
+			"version": "latest"
+		},
+		"ghcr.io/devcontainers/features/git:1": {
+			"version": "latest"
+		},
+		"ghcr.io/devcontainers/features/common-utils:2": {
+			"installZsh": true,
+			"configureZshAsDefaultShell": true,
+			"installOhMyZsh": true
+		}
+	},
+
+	"customizations": {
+		"vscode": {
+			"extensions": [
+				"hashicorp.terraform",
+				"ms-azuretools.vscode-azureterraform",
+				"ms-vscode.azurecli",
+				"github.copilot",
+				"github.copilot-chat"
+			],
+			"settings": {
+				"terraform.languageServer.enable": true,
+				"terraform.validation.enable": true,
+				"terraform.format.enable": true
+			}
+		}
+	},
+
+	"postCreateCommand": "terraform --version && az --version && sudo apt-get update && sudo apt-get install -y openvpn iputils-ping curl net-tools dnsutils && echo '✓ Dev container ready with VPN support'",
+	
+	"remoteUser": "vscode",
+
+	// ============================================================================
+	// VPN Support Configuration
+	// ============================================================================
+	// These settings enable Point-to-Site VPN connections from within the container
+	// Required for connecting to Azure VPN Gateway and accessing private resources
+	
+	// Enable TUN/TAP for VPN support
+	"runArgs": [
+		"--cap-add=NET_ADMIN",      // Network administration capability
+		"--device=/dev/net/tun"      // TUN/TAP device for VPN tunnels
+	],
+	
+	"mounts": [
+		"type=bind,source=/dev/net,target=/dev/net"  // Mount TUN/TAP device
+	]
+}

@@ -20,7 +20,7 @@ variable "rg_app" {
 
 variable "vnet_name" {
   type        = string
-  description = "Sandbox VNet name (e.g., vnet-foundry-sbx-weu)"
+  description = "Sandbox VNet name (e.g., vnet-hexpert-sbx-weu)"
 }
 
 variable "subnet_aca" {
@@ -30,10 +30,10 @@ variable "subnet_aca" {
 
 variable "aca_env_name" {
   type        = string
-  description = "ACA managed environment name (e.g., cae-foundry-sbx-weu)"
+  description = "ACA managed environment name (e.g., cae-hexpert-sbx-weu)"
 }
 
 variable "laws_name" {
   type        = string
-  description = "Log Analytics workspace name (e.g., laws-foundry-sbx-weu)"
+  description = "Log Analytics workspace name (e.g., laws-hexpert-sbx-weu)"
 }

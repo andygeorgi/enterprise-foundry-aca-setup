@@ -1,6 +1,6 @@
 # Enterprise Foundry - Azure Container Apps Sandbox Setup
 
-A Terraform-based infrastructure setup for deploying Azure Container Apps (ACA) with VNet integration, private endpoints, AI services, and hybrid connectivity simulation.
+A Terraform-based infrastructure setup for deploying Azure Container Apps (ACA) with hub-and-spoke network topology, VPN Gateway for Point-to-Site connectivity, VNet integration, private endpoints, and hybrid connectivity simulation.
 
 ## 🏗️ Architecture
 
@@ -10,27 +10,34 @@ A Terraform-based infrastructure setup for deploying Azure Container Apps (ACA) 
 
 | Component | Description |
 |-----------|-------------|
-| **Hub VNet** | Simulates corporate hub network (Gateway & Firewall subnets ready) |
-| **Sandbox VNet** | Contains ACA environment with VNet injection |
-| **On-Prem Simulation VNet** | Ubuntu VM with nginx simulating on-premises servers |
+| **Hub VNet** | Central hub network with VPN Gateway for Point-to-Site connectivity |
+| **VPN Gateway** | Enables secure remote access from local machines to Azure resources |
+| **Sandbox VNet** | Contains ACA environment with VNet injection (spoke) |
+| **On-Prem Simulation VNet** | Ubuntu VM with nginx simulating on-premises servers (spoke) |
 | **Azure Container Apps** | VNet-injected container environment with internal load balancer |
-| **AI Services** | Document Intelligence + AI Search with Private Endpoints |
-| **Private Endpoints** | Secure access to Storage, ACR, Document Intelligence, AI Search |
+| **Private Endpoints** | Secure access to Storage Account and Container Registry |
 | **Private DNS Zones** | DNS resolution for privatelink endpoints |
-| **Direct VNet Peering** | Hub-spoke topology with direct spoke-to-spoke peering |
+| **Hub-Spoke Peering** | All spokes peer to hub with gateway transit enabled |
 
 ### Network Topology
 
 ```
+                      Your Local Machine
+                      (192.168.x.x / 172.16.0.x)
+                              │
+                              │ P2S VPN
+                              ▼
                     ┌─────────────────┐
+                    │   VPN Gateway   │
+                    │                 │
                     │    Hub VNet     │
                     │   10.0.0.0/16   │
                     └────────┬────────┘
                              │
               ┌──────────────┼──────────────┐
               │ VNet Peering │ VNet Peering │
-              ▼              │              ▼
-    ┌─────────────────┐      │     ┌─────────────────┐
+              ▼  (Gateway    │  (Gateway    ▼
+    ┌─────────────────┐      │  Transit)   ┌─────────────────┐
     │  Sandbox VNet   │◄─────┴────►│  On-Prem Sim    │
     │  10.7.0.0/26    │  Direct    │  10.7.1.0/24    │
     │                 │  Peering   │                 │
@@ -43,18 +50,15 @@ A Terraform-based infrastructure setup for deploying Azure Container Apps (ACA) 
     │  │ /28 subnet│  │
     │  └───────────┘  │
     └─────────────────┘
-            │
-            ▼
-    ┌─────────────────────────────────────┐
-    │          AI Services (PE)           │
-    │  ┌──────────────┐ ┌──────────────┐  │
-    │  │  Document    │ │  AI Search   │  │
-    │  │ Intelligence │ │              │  │
-    │  └──────────────┘ └──────────────┘  │
-    └─────────────────────────────────────┘
 ```
 
-> **Important**: VNet peering is non-transitive! Traffic cannot flow Hub→Sandbox→Hub→OnPrem. Direct peering between Sandbox and On-Prem VNets is required for ACA to reach simulated on-premises resources.
+> **Key Features**:
+> - **Point-to-Site VPN**: Connect your local machine securely to Azure networks
+> - **Hub-Spoke Topology**: Centralized gateway with spoke VNets for workloads
+> - **Gateway Transit**: Spokes use the hub's VPN gateway for remote connectivity
+> - **Direct Peering**: Sandbox and On-Prem VNets also have direct peering for ACA connectivity
+
+For detailed architecture and network setup information, see [Network README](terraform/network/README.md).
 
 ## 📋 Prerequisites
 
@@ -62,12 +66,7 @@ A Terraform-based infrastructure setup for deploying Azure Container Apps (ACA) 
 - WSL2 (Ubuntu) or Linux environment
 - Azure CLI
 - Terraform >= 1.5.0
-- **Existing Hub VNet** (the network module peers to it but does not create it)
-
-> **Note:** The Hub VNet must already exist in your Azure environment. The Terraform `network` module creates VNet peerings to the Hub but does not provision the Hub itself. If you don't have a Hub VNet, you can either:
-> - Create one manually before deploying
-> - Modify the `network` module to create it
-> - Remove the Hub peering resources if not needed
+- OpenSSL (for VPN certificate generation)
 
 ### Install Prerequisites
 
@@ -78,6 +77,62 @@ A Terraform-based infrastructure setup for deploying Azure Container Apps (ACA) 
 This script installs or upgrades:
 - Azure CLI
 - Terraform
+
+## 🔐 VPN Setup (Point-to-Site Connectivity)
+
+The infrastructure supports **flexible hub VNet configuration**:
+
+**Option 1: Create New Hub with VPN** (Default)
+- Creates hub VNet with VPN Gateway
+- Cost: ~$250/month
+- Deployment: 30-45 minutes
+
+**Option 2: Create New Hub without VPN**
+- Creates hub VNet only (no VPN Gateway)
+- Cost: ~$30/month (saves $150+/month)
+- Add VPN later if needed
+
+**Option 3: Use Existing Hub VNet**
+- Connect to your existing corporate hub
+- Cost: ~$30/month (peering only)
+- Reuse existing VPN/ExpressRoute
+
+See [Network README - Configuration Scenarios](terraform/network/README.md#configuration-scenarios) for detailed scenarios.
+
+### Quick VPN Setup (Option 1)
+
+1. **Generate VPN Certificates**:
+   ```bash
+   ./tools/generate_vpn_certificates.sh
+   ```
+   This creates the necessary certificates in `~/vpn-certs/` and displays the root certificate data.
+
+2. **Configure Terraform**:
+   ```bash
+   cd terraform/network
+   cp terraform.tfvars.example terraform.tfvars
+   # Edit terraform.tfvars:
+   #   create_hub_vnet = true
+   #   create_vpn_gateway = true
+   #   vpn_root_cert_data = "MIID..."
+   ```
+
+3. **Deploy the Infrastructure** (VPN Gateway takes 30-45 minutes)
+   ```bash
+   terraform init
+   terraform apply
+   ```
+
+4. **Connect to VPN** - See [Network README - VPN Setup](terraform/network/README.md#vpn-setup)
+
+### What You Can Access via VPN
+
+Once connected to the VPN:
+- ✅ Access resources in all VNets (Hub, Sandbox, On-Prem Simulation)
+- ✅ SSH to the on-premises simulation VM
+- ✅ Access private endpoints (Storage, ACR)
+- ✅ Connect to internal Container Apps
+- ✅ Troubleshoot network connectivity issues
 
 ## 🚀 Quick Start
 
@@ -90,7 +145,6 @@ cd enterprise-foundry-aca-setup
 # Copy example configs and customize
 cp terraform/network/terraform.tfvars.example terraform/network/terraform.tfvars
 cp terraform/aca_env/terraform.tfvars.example terraform/aca_env/terraform.tfvars
-cp terraform/ai_services/terraform.tfvars.example terraform/ai_services/terraform.tfvars
 cp terraform/container_apps/terraform.tfvars.example terraform/container_apps/terraform.tfvars
 
 # Edit each terraform.tfvars with your values
@@ -112,7 +166,7 @@ Use the interactive Terraform executor:
 ```
 
 **Menu options:**
-- `1-4` - Toggle module selection
+- `1-3` - Toggle module selection
 - `a` - Select all modules
 - `p` - Plan (preview changes)
 - `d` - Deploy selected modules
@@ -122,8 +176,16 @@ Use the interactive Terraform executor:
 **Deployment order** (handled automatically):
 1. `network` - VNets, VMs, Storage, ACR, Private Endpoints
 2. `aca_env` - Azure Container Apps Environment
-3. `ai_services` - Document Intelligence, AI Search, Private Endpoints
-4. `container_apps` - Test container applications
+3. `container_apps` - Test container applications
+
+## � Documentation
+
+For detailed guides and references:
+
+- **[Network Infrastructure Guide](terraform/network/README.md)** - Complete hub-and-spoke network setup, VPN configuration, troubleshooting
+- **Architecture Diagrams** - See above and `architecture_diagram.svg`
+- **Terraform Examples** - See `terraform.tfvars.example` in each module
+- **Helper Scripts** - See `tools/` directory
 
 ## 📁 Project Structure
 
@@ -132,18 +194,23 @@ enterprise-foundry-aca-setup/
 ├── 00_install_prerequisites.sh     # Install Azure CLI + Terraform
 ├── 01_terraform.sh                 # Interactive deployment script
 ├── architecture_diagram.svg        # Visual architecture diagram
+├── src/                            # Container application source code
+│   ├── README.md                   # Container apps development guide
+│   └── file-upload-app/            # File upload web application
+│       ├── app.py                  # Flask application
+│       ├── Dockerfile              # Container image
+│       ├── docker-compose.yml      # Local testing
+│       ├── build.sh                # Build & push to ACR
+│       ├── deploy.sh               # Deploy to ACA
+│       └── README.md               # App documentation
 ├── terraform/
 │   ├── network/                    # Core networking infrastructure
+│   │   ├── README.md               # ⭐ Complete network setup guide
 │   │   ├── main.tf
 │   │   ├── variables.tf
 │   │   ├── outputs.tf
 │   │   └── terraform.tfvars.example
 │   ├── aca_env/                    # Container Apps Environment
-│   │   ├── main.tf
-│   │   ├── variables.tf
-│   │   ├── outputs.tf
-│   │   └── terraform.tfvars.example
-│   ├── ai_services/                # AI Services (Doc Intel, AI Search)
 │   │   ├── main.tf
 │   │   ├── variables.tf
 │   │   ├── outputs.tf
@@ -154,6 +221,8 @@ enterprise-foundry-aca-setup/
 │       ├── outputs.tf
 │       └── terraform.tfvars.example
 └── tools/
+    ├── generate_vpn_certificates.sh # VPN certificate generation
+    ├── vpn_helper.sh               # VPN management & diagnostics
     ├── monitor_onprem.sh           # Monitor VM connectivity test
     ├── monitor_storage.sh          # Monitor storage PE test
     └── generate_architecture_diagram.sh
@@ -193,140 +262,56 @@ Tests connectivity to Azure Storage via Private Endpoint using managed identity.
    Private IP: 10.7.0.36 | Response: 299 bytes
 ```
 
-## 🤖 Azure AI Foundry Setup (Portal)
+## � Container Applications
 
-Azure AI Foundry is set up manually via the Azure Portal, as it requires a Managed VNet that integrates with your existing AI Services.
+The `src/` directory contains production-ready container applications that run in Azure Container Apps.
 
-### 1. Create AI Hub
+### File Upload App
 
-1. Go to [ai.azure.com](https://ai.azure.com) → **Management** → **All hubs** → **+ New hub**
-2. Configure:
-   - **Hub name**: `hub-foundry-sbx`
-   - **Resource group**: Same as `rg_app` (e.g., `rg-foundry-sbx-app`)
-   - **Region**: Same as your Terraform deployment
-   - **Azure AI services**: Create new or select existing
-3. **Networking** tab:
-   - Select **Private with Internet Outbound**
-   - This creates a Managed VNet with automatic Private Endpoints
-4. Review and create
+A web application for uploading multiple files with a modern, responsive interface.
 
-### 2. Create AI Project
+**Features:**
+- 📁 Multiple file upload with drag & drop
+- 🎨 Modern, responsive UI
+- 🔒 Internal ingress (VPN-only access)
+- 📊 Real-time file validation
+- ⚡ Auto-scaling (1-3 replicas)
 
-1. In AI Foundry portal → **+ New project**
-2. Configure:
-   - **Project name**: `project-foundry-sbx`
-   - **Hub**: Select `hub-foundry-sbx`
-3. Create project
-
-### 3. Add Connections to AI Services
-
-Connect your Terraform-deployed AI Services to AI Foundry:
-
-1. In AI Foundry → **Management** → **Connected resources** → **+ New connection**
-2. **Document Intelligence**:
-   - Type: **Azure AI Services**
-   - Select your `cog-docintel-*` resource
-   - Authentication: **API Key** or **Managed Identity**
-3. **AI Search**:
-   - Type: **Azure AI Search**
-   - Select your `search-*` resource
-   - Authentication: **API Key** or **Managed Identity**
-
-> **Note**: When you add connections, AI Foundry automatically creates Private Endpoints in its Managed VNet to reach your services securely.
-
-### 4. Verify Connectivity
-
-1. Go to **Playground** in AI Foundry
-2. Test Document Intelligence by uploading a document
-3. Test AI Search by creating/querying an index
-
-## 🔌 AI Services Usage in Container Apps
-
-The `ai_services` Terraform module creates a Managed Identity (`id-aca-ai-services`) with the necessary RBAC roles. Use this identity in your Container Apps to access AI Services.
-
-### Environment Variables
-
-After deploying `ai_services`, use the outputs in your Container Apps:
+**Quick Start:**
 
 ```bash
-# Get outputs from ai_services module
-cd terraform/ai_services
-terraform output
+# Test locally
+cd src/file-upload-app
+./run-local.sh
+
+# Access at http://localhost:8080
 ```
 
-**Available outputs:**
+**Deploy to Azure:**
 
-| Output | Description | Example |
-|--------|-------------|---------|
-| `docintel_endpoint` | Document Intelligence endpoint | `https://cog-docintel-xyz.cognitiveservices.azure.com/` |
-| `docintel_id` | Resource ID for RBAC | `/subscriptions/.../cognitiveServices/cog-docintel-xyz` |
-| `search_endpoint` | AI Search endpoint | `https://search-xyz.search.windows.net` |
-| `search_id` | Resource ID for RBAC | `/subscriptions/.../searchServices/search-xyz` |
-| `aca_ai_services_identity_id` | Managed Identity resource ID | `/subscriptions/.../userAssignedIdentities/id-aca-ai-services` |
-| `aca_ai_services_identity_client_id` | Client ID for token requests | `xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx` |
+```bash
+# 1. Build and push to ACR
+./build.sh
 
-### Using in Container Apps
+# 2. Deploy to Container Apps
+./deploy.sh
 
-Add these environment variables to your Container App:
-
-```hcl
-# In container_apps/main.tf
-resource "azurerm_container_app" "my_app" {
-  # ... other config ...
-
-  identity {
-    type         = "UserAssigned"
-    identity_ids = [data.azurerm_user_assigned_identity.ai_services.id]
-  }
-
-  template {
-    container {
-      # ... other config ...
-      
-      env {
-        name  = "AZURE_CLIENT_ID"
-        value = data.azurerm_user_assigned_identity.ai_services.client_id
-      }
-      env {
-        name  = "DOCINTEL_ENDPOINT"
-        value = "https://cog-docintel-xyz.cognitiveservices.azure.com/"
-      }
-      env {
-        name  = "SEARCH_ENDPOINT"
-        value = "https://search-xyz.search.windows.net"
-      }
-    }
-  }
-}
+# 3. Or use Terraform
+cd ../../terraform/container_apps
+terraform apply
 ```
 
-### Python SDK Example
+**Access the app:**
 
-```python
-from azure.identity import ManagedIdentityCredential
-from azure.ai.formrecognizer import DocumentAnalysisClient
-from azure.search.documents import SearchClient
-
-# Use the Managed Identity
-credential = ManagedIdentityCredential(
-    client_id=os.environ["AZURE_CLIENT_ID"]
-)
-
-# Document Intelligence
-doc_client = DocumentAnalysisClient(
-    endpoint=os.environ["DOCINTEL_ENDPOINT"],
-    credential=credential
-)
-
-# AI Search
-search_client = SearchClient(
-    endpoint=os.environ["SEARCH_ENDPOINT"],
-    index_name="my-index",
-    credential=credential
-)
+```bash
+# Get the URL (requires VPN connection)
+cd terraform/container_apps
+terraform output file_upload_app
 ```
 
-## 🔧 Configuration Reference
+See [Container Apps Development Guide](src/README.md) for detailed documentation and how to add more apps.
+
+## �🔧 Configuration Reference
 
 ### Required Variables
 
@@ -340,8 +325,6 @@ search_client = SearchClient(
 | network | `acr_name` | Globally unique container registry name |
 | aca_env | `vnet_name` | Sandbox VNet name (from network module) |
 | aca_env | `subnet_aca` | ACA subnet name (from network module) |
-| ai_services | `docintel_name` | Globally unique Document Intelligence name |
-| ai_services | `search_name` | Globally unique AI Search name |
 | container_apps | `aca_env_name` | ACA environment name (from aca_env module) |
 | container_apps | `storage_account_name` | Storage account name (from network module) |
 
@@ -361,7 +344,7 @@ Destroy in reverse order:
 
 ```bash
 ./01_terraform.sh
-# Select modules in reverse order: container_apps → ai_services → aca_env → network
+# Select modules in reverse order: container_apps → aca_env → network
 # Press 'x' to destroy
 ```
 
@@ -369,7 +352,6 @@ Or manually:
 
 ```bash
 cd terraform/container_apps && terraform destroy
-cd ../ai_services && terraform destroy
 cd ../aca_env && terraform destroy
 cd ../network && terraform destroy
 ```
