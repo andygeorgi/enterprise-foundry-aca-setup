@@ -28,17 +28,79 @@ variable "rg_app" {
   default     = "rg-hexpert-sbx-app"
 }
 
-# ======= Hub VNet (existing) =======
-variable "hub_vnet_rg" {
-  type        = string
-  description = "Resource group containing the hub VNet"
-  default     = "net-shared-test-westeurope-001"
+# ======= Hub VNet Configuration =======
+variable "create_hub_vnet" {
+  type        = bool
+  description = "Create a new hub VNet with VPN Gateway. Set to false to use an existing hub VNet."
+  default     = true
 }
 
+variable "existing_hub_vnet_rg" {
+  type        = string
+  description = "Resource group of existing hub VNet (only used if create_hub_vnet = false)"
+  default     = ""
+}
+
+# ======= Hub VNet (corporate hub with VPN Gateway) =======
 variable "hub_vnet_name" {
   type        = string
-  description = "Name of the existing hub VNet"
-  default     = "net-shared-gateway-westeurope-001"
+  description = "Name of the hub VNet"
+  default     = "vnet-hub-weu"
+}
+
+variable "hub_vnet_prefix" {
+  type        = string
+  description = "Hub VNet address prefix"
+  default     = "10.0.0.0/16"
+}
+
+variable "hub_snet_gw_prefix" {
+  type        = string
+  description = "Hub Gateway subnet prefix (for VPN Gateway)"
+  default     = "10.0.1.0/24"
+}
+
+variable "hub_snet_fw_prefix" {
+  type        = string
+  description = "Hub Firewall subnet prefix (optional, for Azure Firewall)"
+  default     = "10.0.2.0/24"
+}
+
+# ======= VPN Gateway Configuration =======
+variable "create_vpn_gateway" {
+  type        = bool
+  description = "Create VPN Gateway in the hub VNet. Only applicable if create_hub_vnet = true."
+  default     = true
+}
+
+variable "vpn_gateway_sku" {
+  type        = string
+  description = "VPN Gateway SKU (VpnGw1, VpnGw2, VpnGw3, VpnGw1AZ, etc.)"
+  default     = "VpnGw1"
+
+  validation {
+    condition     = contains(["VpnGw1", "VpnGw2", "VpnGw3", "VpnGw1AZ", "VpnGw2AZ", "VpnGw3AZ"], var.vpn_gateway_sku)
+    error_message = "VPN Gateway SKU must be one of: VpnGw1, VpnGw2, VpnGw3, VpnGw1AZ, VpnGw2AZ, VpnGw3AZ"
+  }
+}
+
+variable "vpn_client_address_space" {
+  type        = string
+  description = "Address space for VPN clients (Point-to-Site). This range should not overlap with any VNet."
+  default     = "172.16.0.0/24"
+}
+
+variable "vpn_root_cert_name" {
+  type        = string
+  description = "Name for the root certificate used for P2S VPN authentication"
+  default     = "P2SRootCert"
+}
+
+variable "vpn_root_cert_data" {
+  type        = string
+  description = "Base64 encoded public certificate data (without BEGIN/END CERTIFICATE headers)"
+  default     = ""
+  sensitive   = true
 }
 
 # ======= Sandbox VNet & Subnets =======
@@ -76,6 +138,18 @@ variable "sbx_snet_pe_prefix" {
   type        = string
   description = "Private Endpoints subnet prefix"
   default     = "10.7.0.32/28"
+}
+
+variable "sbx_snet_acr_agent_name" {
+  type        = string
+  description = "ACR build agent pool subnet name"
+  default     = "snet-acr-agents"
+}
+
+variable "sbx_snet_acr_agent_prefix" {
+  type        = string
+  description = "ACR build agent pool subnet prefix"
+  default     = "10.7.0.48/28"
 }
 
 # ======= On-prem simulation VNet & Subnet =======

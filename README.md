@@ -1,6 +1,6 @@
 # Enterprise Foundry - Azure Container Apps Sandbox Setup
 
-A Terraform-based infrastructure setup for deploying Azure Container Apps (ACA) with VNet integration, private endpoints, and hybrid connectivity simulation.
+A Terraform-based infrastructure setup for deploying Azure Container Apps (ACA) with hub-and-spoke network topology, VPN Gateway for Point-to-Site connectivity, VNet integration, private endpoints, and hybrid connectivity simulation.
 
 ## 🏗️ Architecture
 
@@ -10,26 +10,34 @@ A Terraform-based infrastructure setup for deploying Azure Container Apps (ACA) 
 
 | Component | Description |
 |-----------|-------------|
-| **Hub VNet** | Simulates corporate hub network (Gateway & Firewall subnets ready) |
-| **Sandbox VNet** | Contains ACA environment with VNet injection |
-| **On-Prem Simulation VNet** | Ubuntu VM with nginx simulating on-premises servers |
+| **Hub VNet** | Central hub network with VPN Gateway for Point-to-Site connectivity |
+| **VPN Gateway** | Enables secure remote access from local machines to Azure resources |
+| **Sandbox VNet** | Contains ACA environment with VNet injection (spoke) |
+| **On-Prem Simulation VNet** | Ubuntu VM with nginx simulating on-premises servers (spoke) |
 | **Azure Container Apps** | VNet-injected container environment with internal load balancer |
 | **Private Endpoints** | Secure access to Storage Account and Container Registry |
 | **Private DNS Zones** | DNS resolution for privatelink endpoints |
-| **Direct VNet Peering** | Hub-spoke topology with direct spoke-to-spoke peering |
+| **Hub-Spoke Peering** | All spokes peer to hub with gateway transit enabled |
 
 ### Network Topology
 
 ```
+                      Your Local Machine
+                      (192.168.x.x / 172.16.0.x)
+                              │
+                              │ P2S VPN
+                              ▼
                     ┌─────────────────┐
+                    │   VPN Gateway   │
+                    │                 │
                     │    Hub VNet     │
                     │   10.0.0.0/16   │
                     └────────┬────────┘
                              │
               ┌──────────────┼──────────────┐
               │ VNet Peering │ VNet Peering │
-              ▼              │              ▼
-    ┌─────────────────┐      │     ┌─────────────────┐
+              ▼  (Gateway    │  (Gateway    ▼
+    ┌─────────────────┐      │  Transit)   ┌─────────────────┐
     │  Sandbox VNet   │◄─────┴────►│  On-Prem Sim    │
     │  10.7.0.0/26    │  Direct    │  10.7.1.0/24    │
     │                 │  Peering   │                 │
@@ -44,7 +52,13 @@ A Terraform-based infrastructure setup for deploying Azure Container Apps (ACA) 
     └─────────────────┘
 ```
 
-> **Important**: VNet peering is non-transitive! Traffic cannot flow Hub→Sandbox→Hub→OnPrem. Direct peering between Sandbox and On-Prem VNets is required for ACA to reach simulated on-premises resources.
+> **Key Features**:
+> - **Point-to-Site VPN**: Connect your local machine securely to Azure networks
+> - **Hub-Spoke Topology**: Centralized gateway with spoke VNets for workloads
+> - **Gateway Transit**: Spokes use the hub's VPN gateway for remote connectivity
+> - **Direct Peering**: Sandbox and On-Prem VNets also have direct peering for ACA connectivity
+
+For detailed architecture and network setup information, see [Network README](terraform/network/README.md).
 
 ## 📋 Prerequisites
 
@@ -52,12 +66,7 @@ A Terraform-based infrastructure setup for deploying Azure Container Apps (ACA) 
 - WSL2 (Ubuntu) or Linux environment
 - Azure CLI
 - Terraform >= 1.5.0
-- **Existing Hub VNet** (the network module peers to it but does not create it)
-
-> **Note:** The Hub VNet must already exist in your Azure environment. The Terraform `network` module creates VNet peerings to the Hub but does not provision the Hub itself. If you don't have a Hub VNet, you can either:
-> - Create one manually before deploying
-> - Modify the `network` module to create it
-> - Remove the Hub peering resources if not needed
+- OpenSSL (for VPN certificate generation)
 
 ### Install Prerequisites
 
@@ -68,6 +77,62 @@ A Terraform-based infrastructure setup for deploying Azure Container Apps (ACA) 
 This script installs or upgrades:
 - Azure CLI
 - Terraform
+
+## 🔐 VPN Setup (Point-to-Site Connectivity)
+
+The infrastructure supports **flexible hub VNet configuration**:
+
+**Option 1: Create New Hub with VPN** (Default)
+- Creates hub VNet with VPN Gateway
+- Cost: ~$250/month
+- Deployment: 30-45 minutes
+
+**Option 2: Create New Hub without VPN**
+- Creates hub VNet only (no VPN Gateway)
+- Cost: ~$30/month (saves $150+/month)
+- Add VPN later if needed
+
+**Option 3: Use Existing Hub VNet**
+- Connect to your existing corporate hub
+- Cost: ~$30/month (peering only)
+- Reuse existing VPN/ExpressRoute
+
+See [Network README - Configuration Scenarios](terraform/network/README.md#configuration-scenarios) for detailed scenarios.
+
+### Quick VPN Setup (Option 1)
+
+1. **Generate VPN Certificates**:
+   ```bash
+   ./tools/generate_vpn_certificates.sh
+   ```
+   This creates the necessary certificates in `~/vpn-certs/` and displays the root certificate data.
+
+2. **Configure Terraform**:
+   ```bash
+   cd terraform/network
+   cp terraform.tfvars.example terraform.tfvars
+   # Edit terraform.tfvars:
+   #   create_hub_vnet = true
+   #   create_vpn_gateway = true
+   #   vpn_root_cert_data = "MIID..."
+   ```
+
+3. **Deploy the Infrastructure** (VPN Gateway takes 30-45 minutes)
+   ```bash
+   terraform init
+   terraform apply
+   ```
+
+4. **Connect to VPN** - See [Network README - VPN Setup](terraform/network/README.md#vpn-setup)
+
+### What You Can Access via VPN
+
+Once connected to the VPN:
+- ✅ Access resources in all VNets (Hub, Sandbox, On-Prem Simulation)
+- ✅ SSH to the on-premises simulation VM
+- ✅ Access private endpoints (Storage, ACR)
+- ✅ Connect to internal Container Apps
+- ✅ Troubleshoot network connectivity issues
 
 ## 🚀 Quick Start
 
@@ -113,6 +178,15 @@ Use the interactive Terraform executor:
 2. `aca_env` - Azure Container Apps Environment
 3. `container_apps` - Test container applications
 
+## � Documentation
+
+For detailed guides and references:
+
+- **[Network Infrastructure Guide](terraform/network/README.md)** - Complete hub-and-spoke network setup, VPN configuration, troubleshooting
+- **Architecture Diagrams** - See above and `architecture_diagram.svg`
+- **Terraform Examples** - See `terraform.tfvars.example` in each module
+- **Helper Scripts** - See `tools/` directory
+
 ## 📁 Project Structure
 
 ```
@@ -120,8 +194,18 @@ enterprise-foundry-aca-setup/
 ├── 00_install_prerequisites.sh     # Install Azure CLI + Terraform
 ├── 01_terraform.sh                 # Interactive deployment script
 ├── architecture_diagram.svg        # Visual architecture diagram
+├── src/                            # Container application source code
+│   ├── README.md                   # Container apps development guide
+│   └── file-upload-app/            # File upload web application
+│       ├── app.py                  # Flask application
+│       ├── Dockerfile              # Container image
+│       ├── docker-compose.yml      # Local testing
+│       ├── build.sh                # Build & push to ACR
+│       ├── deploy.sh               # Deploy to ACA
+│       └── README.md               # App documentation
 ├── terraform/
 │   ├── network/                    # Core networking infrastructure
+│   │   ├── README.md               # ⭐ Complete network setup guide
 │   │   ├── main.tf
 │   │   ├── variables.tf
 │   │   ├── outputs.tf
@@ -137,6 +221,8 @@ enterprise-foundry-aca-setup/
 │       ├── outputs.tf
 │       └── terraform.tfvars.example
 └── tools/
+    ├── generate_vpn_certificates.sh # VPN certificate generation
+    ├── vpn_helper.sh               # VPN management & diagnostics
     ├── monitor_onprem.sh           # Monitor VM connectivity test
     ├── monitor_storage.sh          # Monitor storage PE test
     └── generate_architecture_diagram.sh
@@ -176,7 +262,56 @@ Tests connectivity to Azure Storage via Private Endpoint using managed identity.
    Private IP: 10.7.0.36 | Response: 299 bytes
 ```
 
-## 🔧 Configuration Reference
+## � Container Applications
+
+The `src/` directory contains production-ready container applications that run in Azure Container Apps.
+
+### File Upload App
+
+A web application for uploading multiple files with a modern, responsive interface.
+
+**Features:**
+- 📁 Multiple file upload with drag & drop
+- 🎨 Modern, responsive UI
+- 🔒 Internal ingress (VPN-only access)
+- 📊 Real-time file validation
+- ⚡ Auto-scaling (1-3 replicas)
+
+**Quick Start:**
+
+```bash
+# Test locally
+cd src/file-upload-app
+./run-local.sh
+
+# Access at http://localhost:8080
+```
+
+**Deploy to Azure:**
+
+```bash
+# 1. Build and push to ACR
+./build.sh
+
+# 2. Deploy to Container Apps
+./deploy.sh
+
+# 3. Or use Terraform
+cd ../../terraform/container_apps
+terraform apply
+```
+
+**Access the app:**
+
+```bash
+# Get the URL (requires VPN connection)
+cd terraform/container_apps
+terraform output file_upload_app
+```
+
+See [Container Apps Development Guide](src/README.md) for detailed documentation and how to add more apps.
+
+## �🔧 Configuration Reference
 
 ### Required Variables
 

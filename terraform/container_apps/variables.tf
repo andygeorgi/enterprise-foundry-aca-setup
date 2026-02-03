@@ -45,3 +45,26 @@ variable "storage_container_name" {
   description = "Name of the blob container to list"
   default     = "test"
 }
+
+variable "acr_name" {
+  type        = string
+  description = "Name of the Azure Container Registry"
+}
+
+variable "app_file_upload_name" {
+  type        = string
+  description = "Name of the file upload container app"
+  default     = "aca-file-upload"
+}
+
+variable "file_upload_image_name" {
+  type        = string
+  description = "Name of the file upload container image in ACR"
+  default     = "file-upload-app"
+}
+
+variable "file_upload_image_tag" {
+  type        = string
+  description = "Tag of the file upload container image"
+  default     = "latest"
+}

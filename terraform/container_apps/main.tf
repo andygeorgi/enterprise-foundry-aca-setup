@@ -129,3 +129,72 @@ resource "azurerm_role_assignment" "pe_storage_test_blob_reader" {
   role_definition_name = "Storage Blob Data Reader"
   principal_id         = azurerm_container_app.pe_storage_test.identity[0].principal_id
 }
+
+# --- Data lookups: ACR and Managed Identity for ACR pull ---
+
+data "azurerm_container_registry" "acr" {
+  name                = var.acr_name
+  resource_group_name = var.rg_app
+}
+
+data "azurerm_user_assigned_identity" "aca_acr_pull" {
+  name                = "id-aca-acr-pull"
+  resource_group_name = var.rg_app
+}
+
+# --- Container App: File Upload App ---
+
+resource "azurerm_container_app" "file_upload" {
+  name                         = var.app_file_upload_name
+  container_app_environment_id = data.azurerm_container_app_environment.aca_env.id
+  resource_group_name          = var.rg_app
+  revision_mode                = "Single"
+
+  identity {
+    type         = "UserAssigned"
+    identity_ids = [data.azurerm_user_assigned_identity.aca_acr_pull.id]
+  }
+
+  registry {
+    server   = data.azurerm_container_registry.acr.login_server
+    identity = data.azurerm_user_assigned_identity.aca_acr_pull.id
+  }
+
+  ingress {
+    external_enabled = false  # internal ingress
+    target_port      = 80
+    transport        = "auto"
+
+    traffic_weight {
+      percentage      = 100
+      latest_revision = true
+    }
+  }
+
+  template {
+    min_replicas = 1
+    max_replicas = 3
+
+    container {
+      name   = "file-upload-app"
+      image  = "${data.azurerm_container_registry.acr.login_server}/${var.file_upload_image_name}:${var.file_upload_image_tag}"
+      cpu    = 0.5
+      memory = "1Gi"
+
+      env {
+        name  = "PORT"
+        value = "80"
+      }
+
+      env {
+        name  = "UPLOAD_FOLDER"
+        value = "/app/uploads"
+      }
+
+      env {
+        name  = "MAX_CONTENT_LENGTH"
+        value = "16777216"  # 16MB
+      }
+    }
+  }
+}

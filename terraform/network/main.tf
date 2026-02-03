@@ -34,7 +34,7 @@ provider "azurerm" {
     }
   }
   subscription_id = var.subscription_id
-  
+
   # Use Azure AD for storage data plane operations to avoid shared key issues
   storage_use_azuread = true
 }
@@ -51,6 +51,109 @@ resource "azurerm_resource_group" "net" {
 resource "azurerm_resource_group" "app" {
   name     = var.rg_app
   location = var.location
+}
+
+################################################################################
+# Hub VNet - Use Existing or Create New
+################################################################################
+
+# Data source: Reference existing hub VNet (if create_hub_vnet = false)
+data "azurerm_virtual_network" "hub_existing" {
+  count               = var.create_hub_vnet ? 0 : 1
+  name                = var.hub_vnet_name
+  resource_group_name = var.existing_hub_vnet_rg
+}
+
+# Local value to reference the correct hub VNet (existing or new)
+locals {
+  hub_vnet_id   = var.create_hub_vnet ? azurerm_virtual_network.hub[0].id : data.azurerm_virtual_network.hub_existing[0].id
+  hub_vnet_name = var.hub_vnet_name
+  hub_vnet_rg   = var.create_hub_vnet ? azurerm_resource_group.net.name : var.existing_hub_vnet_rg
+}
+
+################################################################################
+# Hub VNet (Central hub with VPN Gateway for P2S connectivity)
+# Only created if create_hub_vnet = true
+################################################################################
+
+resource "azurerm_virtual_network" "hub" {
+  count               = var.create_hub_vnet ? 1 : 0
+  name                = var.hub_vnet_name
+  location            = azurerm_resource_group.net.location
+  resource_group_name = azurerm_resource_group.net.name
+  address_space       = [var.hub_vnet_prefix]
+}
+
+# Gateway Subnet (required for VPN Gateway, must be named "GatewaySubnet")
+# Only created if we're creating a new hub VNet
+resource "azurerm_subnet" "hub_gateway" {
+  count                = var.create_hub_vnet ? 1 : 0
+  name                 = "GatewaySubnet"
+  resource_group_name  = azurerm_resource_group.net.name
+  virtual_network_name = azurerm_virtual_network.hub[0].name
+  address_prefixes     = [var.hub_snet_gw_prefix]
+}
+
+# Optional: Azure Firewall Subnet
+resource "azurerm_subnet" "hub_firewall" {
+  count                = var.create_hub_vnet ? 1 : 0
+  name                 = "AzureFirewallSubnet"
+  resource_group_name  = azurerm_resource_group.net.name
+  virtual_network_name = azurerm_virtual_network.hub[0].name
+  address_prefixes     = [var.hub_snet_fw_prefix]
+}
+
+# Public IP for VPN Gateway
+# Only created if creating new hub VNet AND VPN Gateway
+resource "azurerm_public_ip" "vpn_gateway" {
+  count               = var.create_hub_vnet && var.create_vpn_gateway ? 1 : 0
+  name                = "pip-vpngw-${var.hub_vnet_name}"
+  location            = azurerm_resource_group.net.location
+  resource_group_name = azurerm_resource_group.net.name
+  allocation_method   = "Static"
+  sku                 = "Standard"
+  zones               = [] # VPN Gateway doesn't support zones
+}
+
+# VPN Gateway (for Point-to-Site connectivity)
+# Only created if creating new hub VNet AND VPN Gateway
+resource "azurerm_virtual_network_gateway" "vpn" {
+  count               = var.create_hub_vnet && var.create_vpn_gateway ? 1 : 0
+  name                = "vpngw-${var.hub_vnet_name}"
+  location            = azurerm_resource_group.net.location
+  resource_group_name = azurerm_resource_group.net.name
+
+  type     = "Vpn"
+  vpn_type = "RouteBased"
+
+  # SKU affects throughput and features
+  # VpnGw1 supports up to 128 P2S connections
+  # VpnGw2/3 support more connections and higher throughput
+  sku = var.vpn_gateway_sku
+
+  active_active = false
+  enable_bgp    = false
+
+  ip_configuration {
+    name                          = "vpngw-ipconfig"
+    public_ip_address_id          = azurerm_public_ip.vpn_gateway[0].id
+    private_ip_address_allocation = "Dynamic"
+    subnet_id                     = azurerm_subnet.hub_gateway[0].id
+  }
+
+  # Point-to-Site VPN configuration
+  vpn_client_configuration {
+    address_space = [var.vpn_client_address_space]
+
+    vpn_client_protocols = ["OpenVPN", "IkeV2"]
+    vpn_auth_types       = ["Certificate"]
+
+    # Root certificate for client authentication
+    root_certificate {
+      name             = var.vpn_root_cert_name
+      public_cert_data = var.vpn_root_cert_data
+    }
+  }
 }
 
 ################################################################################
@@ -87,6 +190,14 @@ resource "azurerm_subnet" "sbx_pe" {
   virtual_network_name              = azurerm_virtual_network.sbx.name
   address_prefixes                  = [var.sbx_snet_pe_prefix]
   private_endpoint_network_policies = "Disabled"
+}
+
+# Subnet C: ACR Build Agent Pool (for self-hosted builds within VNet)
+resource "azurerm_subnet" "sbx_acr_agent" {
+  name                 = var.sbx_snet_acr_agent_name
+  resource_group_name  = azurerm_resource_group.net.name
+  virtual_network_name = azurerm_virtual_network.sbx.name
+  address_prefixes     = [var.sbx_snet_acr_agent_prefix]
 }
 
 ################################################################################
@@ -225,22 +336,13 @@ resource "azurerm_linux_virtual_machine" "onprem" {
 }
 
 ################################################################################
-# Data source: Existing Hub VNet
-################################################################################
-
-data "azurerm_virtual_network" "hub" {
-  name                = var.hub_vnet_name
-  resource_group_name = var.hub_vnet_rg
-}
-
-################################################################################
 # VNet Peerings: Hub <-> Sandbox
 ################################################################################
 
 resource "azurerm_virtual_network_peering" "hub_to_sbx" {
   name                         = var.hub_to_sbx_peer
-  resource_group_name          = var.hub_vnet_rg
-  virtual_network_name         = var.hub_vnet_name
+  resource_group_name          = local.hub_vnet_rg
+  virtual_network_name         = local.hub_vnet_name
   remote_virtual_network_id    = azurerm_virtual_network.sbx.id
   allow_virtual_network_access = true
   allow_forwarded_traffic      = true
@@ -251,12 +353,15 @@ resource "azurerm_virtual_network_peering" "sbx_to_hub" {
   name                         = var.sbx_to_hub_peer
   resource_group_name          = azurerm_resource_group.net.name
   virtual_network_name         = azurerm_virtual_network.sbx.name
-  remote_virtual_network_id    = data.azurerm_virtual_network.hub.id
+  remote_virtual_network_id    = local.hub_vnet_id
   allow_virtual_network_access = true
   allow_forwarded_traffic      = true
-  use_remote_gateways          = true
+  use_remote_gateways          = var.create_hub_vnet && var.create_vpn_gateway ? true : false
 
-  depends_on = [azurerm_virtual_network_peering.hub_to_sbx]
+  depends_on = [
+    azurerm_virtual_network_peering.hub_to_sbx,
+    azurerm_virtual_network_gateway.vpn
+  ]
 }
 
 ################################################################################
@@ -265,8 +370,8 @@ resource "azurerm_virtual_network_peering" "sbx_to_hub" {
 
 resource "azurerm_virtual_network_peering" "hub_to_onprem" {
   name                         = var.hub_to_op_peer
-  resource_group_name          = var.hub_vnet_rg
-  virtual_network_name         = var.hub_vnet_name
+  resource_group_name          = local.hub_vnet_rg
+  virtual_network_name         = local.hub_vnet_name
   remote_virtual_network_id    = azurerm_virtual_network.onprem.id
   allow_virtual_network_access = true
   allow_forwarded_traffic      = true
@@ -277,12 +382,15 @@ resource "azurerm_virtual_network_peering" "onprem_to_hub" {
   name                         = var.op_to_hub_peer
   resource_group_name          = azurerm_resource_group.net.name
   virtual_network_name         = azurerm_virtual_network.onprem.name
-  remote_virtual_network_id    = data.azurerm_virtual_network.hub.id
+  remote_virtual_network_id    = local.hub_vnet_id
   allow_virtual_network_access = true
   allow_forwarded_traffic      = true
-  use_remote_gateways          = true
+  use_remote_gateways          = var.create_hub_vnet && var.create_vpn_gateway ? true : false
 
-  depends_on = [azurerm_virtual_network_peering.hub_to_onprem]
+  depends_on = [
+    azurerm_virtual_network_peering.hub_to_onprem,
+    azurerm_virtual_network_gateway.vpn
+  ]
 }
 
 ################################################################################
@@ -343,7 +451,7 @@ resource "azurerm_storage_account" "main" {
   # Network rules are applied separately below to restrict access.
   public_network_access_enabled   = true
   allow_nested_items_to_be_public = false
-  
+
   # Use Azure AD for data plane auth (required with storage_use_azuread = true)
   shared_access_key_enabled       = true
   default_to_oauth_authentication = true
@@ -362,8 +470,8 @@ resource "azurerm_storage_account_network_rules" "main" {
 }
 
 resource "azurerm_storage_container" "sample" {
-  name                 = var.storage_container_name
-  storage_account_id   = azurerm_storage_account.main.id
+  name                  = var.storage_container_name
+  storage_account_id    = azurerm_storage_account.main.id
   container_access_type = "private"
 }
 
@@ -398,14 +506,33 @@ resource "azurerm_container_registry" "acr" {
   name                = var.acr_name
   resource_group_name = azurerm_resource_group.app.name
   location            = azurerm_resource_group.app.location
-  sku                 = "Premium"  # Required for Private Link
-  admin_enabled       = false      # Use managed identity instead
+  sku                 = "Premium" # Required for Private Link and Agent Pool
+  admin_enabled       = false     # Use managed identity instead
 
   # Disable public access - only accessible via Private Endpoint
   public_network_access_enabled = false
 
   # Enable zone redundancy for production workloads
   zone_redundancy_enabled = false
+}
+
+################################################################################
+# ACR Agent Pool (self-hosted builds within VNet)
+################################################################################
+
+resource "azurerm_container_registry_agent_pool" "acr" {
+  name                      = "acr-agent-pool"
+  resource_group_name       = azurerm_resource_group.app.name
+  location                  = azurerm_resource_group.app.location
+  container_registry_name   = azurerm_container_registry.acr.name
+  instance_count            = 1
+  tier                      = "S1" # S1, S2, or S3 (1, 2, or 3 vCPUs)
+  virtual_network_subnet_id = azurerm_subnet.sbx_acr_agent.id
+
+  tags = {
+    Environment = "Sandbox"
+    Purpose     = "Self-hosted ACR build agents for private builds"
+  }
 }
 
 ################################################################################

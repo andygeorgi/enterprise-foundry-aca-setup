@@ -13,6 +13,38 @@ output "rg_app_name" {
   value       = azurerm_resource_group.app.name
 }
 
+# Hub VNet
+output "hub_vnet_id" {
+  description = "ID of the Hub VNet"
+  value       = local.hub_vnet_id
+}
+
+output "hub_vnet_name" {
+  description = "Name of the Hub VNet"
+  value       = local.hub_vnet_name
+}
+
+output "hub_vnet_created" {
+  description = "Whether a new hub VNet was created (true) or existing was used (false)"
+  value       = var.create_hub_vnet
+}
+
+# VPN Gateway
+output "vpn_gateway_id" {
+  description = "ID of the VPN Gateway (if created)"
+  value       = var.create_hub_vnet && var.create_vpn_gateway ? azurerm_virtual_network_gateway.vpn[0].id : null
+}
+
+output "vpn_gateway_public_ip" {
+  description = "Public IP address of the VPN Gateway (if created)"
+  value       = var.create_hub_vnet && var.create_vpn_gateway ? azurerm_public_ip.vpn_gateway[0].ip_address : null
+}
+
+output "vpn_client_address_space" {
+  description = "Address space allocated to VPN clients (if VPN Gateway created)"
+  value       = var.create_hub_vnet && var.create_vpn_gateway ? var.vpn_client_address_space : null
+}
+
 # Sandbox VNet
 output "sbx_vnet_id" {
   description = "ID of the Sandbox VNet"
