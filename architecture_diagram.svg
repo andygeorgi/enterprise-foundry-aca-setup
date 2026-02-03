@@ -40,6 +40,24 @@
   <text x="775" y="35" text-anchor="middle" font-size="24" font-weight="bold" fill="#333">Enterprise Foundry - ACA Sandbox Architecture</text>
   <text x="775" y="58" text-anchor="middle" font-size="14" fill="#666">Azure Container Apps + AI Foundry with VNet Integration &amp; Private Endpoints</text>
 
+  <!-- ==================== Developer Workstation (Top Left) ==================== -->
+  <g id="developer-workstation">
+    <rect x="50" y="85" width="180" height="120" rx="8" fill="#F3E5F5" stroke="#9C27B0" stroke-width="2"/>
+    <text x="140" y="110" text-anchor="middle" font-size="12" font-weight="bold" fill="#9C27B0">Developer Workstation</text>
+    <text x="140" y="128" text-anchor="middle" font-size="9" fill="#666">(Local Machine / Devcontainer)</text>
+    
+    <!-- Devcontainer icon -->
+    <rect x="70" y="140" width="140" height="50" rx="4" fill="#fff" stroke="#9C27B0" stroke-width="1"/>
+    <text x="140" y="158" text-anchor="middle" font-size="9" fill="#9C27B0">🐳 VS Code Devcontainer</text>
+    <text x="140" y="172" text-anchor="middle" font-size="8" fill="#888">Terraform, Azure CLI, OpenVPN</text>
+    <text x="140" y="184" text-anchor="middle" font-size="7" fill="#888">Access: Private Resources</text>
+  </g>
+
+  <!-- P2S VPN Connection (Developer to Hub) -->
+  <line x1="230" y1="145" x2="490" y2="145" stroke="#9C27B0" stroke-width="2" stroke-dasharray="6,3" marker-end="url(#arrowhead)"/>
+  <rect x="300" y="125" width="80" height="22" rx="4" fill="#F3E5F5" stroke="#9C27B0" stroke-width="1"/>
+  <text x="340" y="140" text-anchor="middle" font-size="8" fill="#9C27B0">P2S VPN</text>
+
   <!-- ==================== Hub VNet (Top Center) ==================== -->
   <g id="hub-vnet">
     <rect x="490" y="85" width="220" height="120" rx="8" fill="url(#hubOrange)" stroke="#FF8C00" stroke-width="2"/>
@@ -269,19 +287,21 @@
 
   <!-- ==================== Legend (Bottom Right) ==================== -->
   <g id="legend" transform="translate(900, 840)">
-    <rect x="0" y="0" width="340" height="270" rx="8" fill="#fff" stroke="#ddd" stroke-width="1"/>
+    <rect x="0" y="0" width="340" height="285" rx="8" fill="#fff" stroke="#ddd" stroke-width="1"/>
     <text x="170" y="22" text-anchor="middle" font-size="12" font-weight="bold" fill="#333">Legend</text>
     
     <!-- Connection Types -->
     <text x="15" y="50" font-size="9" font-weight="bold" fill="#333">Connections:</text>
-    <line x1="15" y1="65" x2="50" y2="65" stroke="#107C10" stroke-width="2"/>
-    <text x="60" y="68" font-size="8" fill="#666">VNet Peering (Hub ↔ Spoke)</text>
-    <line x1="15" y1="80" x2="50" y2="80" stroke="#E91E63" stroke-width="3"/>
-    <text x="60" y="83" font-size="8" fill="#666">Direct Peering (Spoke ↔ Spoke)</text>
-    <line x1="15" y1="95" x2="50" y2="95" stroke="#FF8C00" stroke-width="1.5" stroke-dasharray="5,3"/>
-    <text x="60" y="98" font-size="8" fill="#666">Private Endpoint</text>
-    <line x1="15" y1="110" x2="50" y2="110" stroke="#00BCF2" stroke-width="2" stroke-dasharray="8,4"/>
-    <text x="60" y="113" font-size="8" fill="#666">AI Foundry Connection</text>
+    <line x1="15" y1="65" x2="50" y2="65" stroke="#9C27B0" stroke-width="2" stroke-dasharray="6,3"/>
+    <text x="60" y="68" font-size="8" fill="#666">P2S VPN (Developer → Hub)</text>
+    <line x1="15" y1="80" x2="50" y2="80" stroke="#107C10" stroke-width="2"/>
+    <text x="60" y="83" font-size="8" fill="#666">VNet Peering (Hub ↔ Spoke)</text>
+    <line x1="15" y1="95" x2="50" y2="95" stroke="#E91E63" stroke-width="3"/>
+    <text x="60" y="98" font-size="8" fill="#666">Direct Peering (Spoke ↔ Spoke)</text>
+    <line x1="15" y1="110" x2="50" y2="110" stroke="#FF8C00" stroke-width="1.5" stroke-dasharray="5,3"/>
+    <text x="60" y="113" font-size="8" fill="#666">Private Endpoint</text>
+    <line x1="15" y1="125" x2="50" y2="125" stroke="#00BCF2" stroke-width="2" stroke-dasharray="8,4"/>
+    <text x="60" y="128" font-size="8" fill="#666">AI Foundry Connection</text>
     
     <!-- IP Ranges -->
     <text x="180" y="50" font-size="9" font-weight="bold" fill="#333">IP Ranges:</text>
@@ -289,26 +309,27 @@
     <text x="180" y="81" font-size="8" fill="#666">Sandbox: 10.7.0.0/26</text>
     <text x="180" y="94" font-size="8" fill="#666">On-Prem: 10.7.1.0/24</text>
     <text x="180" y="107" font-size="8" fill="#00BCF2">Foundry: Managed</text>
+    <text x="180" y="120" font-size="8" fill="#9C27B0">VPN Client: 172.16.0.0/24</text>
     
     <!-- Terraform Modules -->
-    <text x="15" y="140" font-size="9" font-weight="bold" fill="#333">Terraform Modules:</text>
-    <text x="15" y="155" font-size="8" fill="#666">📁 network - VNets, PE, ACR, VM</text>
-    <text x="15" y="168" font-size="8" fill="#666">📁 aca_env - ACA Environment</text>
-    <text x="15" y="181" font-size="8" fill="#E91E63">📁 ai_services - Doc Intel, Search</text>
-    <text x="15" y="194" font-size="8" fill="#666">📁 container_apps - Test Apps</text>
+    <text x="15" y="155" font-size="9" font-weight="bold" fill="#333">Terraform Modules:</text>
+    <text x="15" y="170" font-size="8" fill="#666">📁 network - VNets, PE, ACR, VM</text>
+    <text x="15" y="183" font-size="8" fill="#666">📁 aca_env - ACA Environment</text>
+    <text x="15" y="196" font-size="8" fill="#E91E63">📁 ai_services - Doc Intel, Search</text>
+    <text x="15" y="209" font-size="8" fill="#666">📁 container_apps - Test Apps</text>
     
     <!-- AI Foundry Info -->
-    <text x="180" y="140" font-size="9" font-weight="bold" fill="#00BCF2">AI Foundry (Portal):</text>
-    <text x="180" y="155" font-size="8" fill="#666">🏠 Hub + 📁 Project</text>
-    <text x="180" y="168" font-size="8" fill="#666">💻 Compute Instances</text>
-    <text x="180" y="181" font-size="8" fill="#666">🧪 Evaluations</text>
-    <text x="180" y="194" font-size="8" fill="#666">🔄 Prompt Flow</text>
+    <text x="180" y="155" font-size="9" font-weight="bold" fill="#00BCF2">AI Foundry (Portal):</text>
+    <text x="180" y="170" font-size="8" fill="#666">🏠 Hub + 📁 Project</text>
+    <text x="180" y="183" font-size="8" fill="#666">💻 Compute Instances</text>
+    <text x="180" y="196" font-size="8" fill="#666">🧪 Evaluations</text>
+    <text x="180" y="209" font-size="8" fill="#666">🔄 Prompt Flow</text>
     
     <!-- Key Note -->
-    <rect x="15" y="210" width="310" height="45" rx="4" fill="#E6F9FF" stroke="#00BCF2" stroke-width="1"/>
-    <text x="170" y="228" text-anchor="middle" font-size="8" font-weight="bold" fill="#00BCF2">Both access same AI Services:</text>
-    <text x="170" y="242" text-anchor="middle" font-size="7" fill="#666">Container Apps → via PE in Sandbox VNet</text>
-    <text x="170" y="252" text-anchor="middle" font-size="7" fill="#666">AI Foundry → via Auto PE in Managed VNet</text>
+    <rect x="15" y="225" width="310" height="45" rx="4" fill="#E6F9FF" stroke="#00BCF2" stroke-width="1"/>
+    <text x="170" y="243" text-anchor="middle" font-size="8" font-weight="bold" fill="#00BCF2">Both access same AI Services:</text>
+    <text x="170" y="257" text-anchor="middle" font-size="7" fill="#666">Container Apps → via PE in Sandbox VNet</text>
+    <text x="170" y="267" text-anchor="middle" font-size="7" fill="#666">AI Foundry → via Auto PE in Managed VNet</text>
   </g>
 
 </svg>
