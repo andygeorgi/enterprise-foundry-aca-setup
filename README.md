@@ -15,9 +15,96 @@ A Terraform-based infrastructure setup for deploying Azure Container Apps (ACA) 
 | **Sandbox VNet** | Contains ACA environment with VNet injection (spoke) |
 | **On-Prem Simulation VNet** | Ubuntu VM with nginx simulating on-premises servers (spoke) |
 | **Azure Container Apps** | VNet-injected container environment with internal load balancer |
-| **Private Endpoints** | Secure access to Storage Account and Container Registry |
+| **AI Services** | Document Intelligence + AI Search with Private Endpoints |
+| **Azure AI Foundry** | AI Hub & Project with Managed VNet (Portal-deployed) |
+| **Private Endpoints** | Secure access to Storage, ACR, Document Intelligence, AI Search |
 | **Private DNS Zones** | DNS resolution for privatelink endpoints |
 | **Hub-Spoke Peering** | All spokes peer to hub with gateway transit enabled |
+
+## 🤖 Azure AI Foundry Setup (Portal)
+
+Azure AI Foundry is deployed **manually via the Azure Portal** with a Managed VNet for network isolation. This allows AI Foundry to access the same AI Services (Document Intelligence, AI Search) that Container Apps access via Private Endpoints.
+
+### Why Portal Deployment?
+
+- **Managed VNet**: AI Foundry's Managed VNet is fully Azure-managed - no Terraform support
+- **Auto Private Endpoints**: Creates its own private endpoints to connected services
+- **Simplified Setup**: Portal wizard handles all networking complexity
+
+### Setup Steps
+
+1. **Navigate to AI Foundry**
+   - Go to [ai.azure.com](https://ai.azure.com) or search "AI Foundry" in Azure Portal
+
+2. **Create AI Hub**
+   ```
+   Name: hub-foundry-sbx
+   Resource Group: rg-foundry-sbx-app
+   Region: West Europe (same as other resources)
+   
+   Networking:
+   ├── Network Isolation: Private with Internet Outbound
+   ├── Workspace managed outbound access: Allow only approved outbound
+   └── No private endpoint (uses Managed VNet instead)
+   ```
+
+3. **Create AI Project**
+   ```
+   Name: project-foundry-sbx
+   Hub: hub-foundry-sbx (created above)
+   ```
+
+4. **Connect to AI Services**
+   
+   In the AI Hub settings, add connections to existing resources:
+   ```
+   Connections:
+   ├── Document Intelligence: <your-docintel-name>
+   ├── AI Search: <your-search-name>
+   └── Storage Account: <your-storage-name>
+   ```
+   
+   > AI Foundry automatically creates managed private endpoints to these services.
+
+5. **Verify Connectivity**
+   
+   In the AI Project:
+   - Open **Notebooks** or **Prompt Flow**
+   - Test connection to Document Intelligence
+   - Verify AI Search index access
+
+### Architecture: Dual Access Pattern
+
+Both **Container Apps** and **AI Foundry** can access the same AI Services:
+
+```
+┌─────────────────────────────┐     ┌─────────────────────────────┐
+│      Container Apps         │     │      Azure AI Foundry       │
+│     (Sandbox VNet)          │     │     (Managed VNet)          │
+│                             │     │                             │
+│  ┌─────────────────────┐    │     │  ┌─────────────────────┐    │
+│  │  pe-docintel        │────┼─────┼──│  Auto PE (Managed)  │    │
+│  │  pe-search          │────┼─────┼──│  Auto PE (Managed)  │    │
+│  └─────────────────────┘    │     │  └─────────────────────┘    │
+└─────────────────────────────┘     └─────────────────────────────┘
+               │                                   │
+               └───────────────┬───────────────────┘
+                               ▼
+                    ┌─────────────────────┐
+                    │    AI Services      │
+                    │  ┌───────────────┐  │
+                    │  │ Doc Intel     │  │
+                    │  │ AI Search     │  │
+                    │  │ Storage       │  │
+                    │  └───────────────┘  │
+                    └─────────────────────┘
+```
+
+**Benefits:**
+- 🔒 Both environments access services privately
+- 🔄 Same data, different tools (code vs. no-code)
+- 📊 Container Apps for production workloads
+- 🧪 AI Foundry for experimentation and prompt engineering
 
 ### Network Topology
 
@@ -77,6 +164,50 @@ For detailed architecture and network setup information, see [Network README](te
 This script installs or upgrades:
 - Azure CLI
 - Terraform
+
+## 🐳 Development Container
+
+This project includes a **VS Code Dev Container** for a consistent development experience with all tools pre-installed.
+
+### Quick Start with Devcontainer
+
+1. **Open in VS Code** with [Remote - Containers](https://marketplace.visualstudio.com/items?itemName=ms-vscode-remote.remote-containers) extension
+2. Click **"Reopen in Container"** when prompted (or `F1` → "Dev Containers: Reopen in Container")
+3. Wait for container to build (~2-3 minutes first time)
+
+### Included Tools
+
+| Tool | Purpose |
+|------|--------|
+| **Terraform** | Infrastructure deployment |
+| **Azure CLI** | Azure authentication & management |
+| **OpenVPN** | VPN connectivity from container |
+| **Git** | Version control |
+| **Zsh + Oh My Zsh** | Enhanced shell experience |
+
+### VS Code Extensions (Auto-installed)
+
+- HashiCorp Terraform
+- Azure Terraform
+- Azure CLI Tools
+- GitHub Copilot
+
+### VPN from Devcontainer
+
+The devcontainer is pre-configured for Point-to-Site VPN:
+
+```bash
+# Setup VPN client (one-time)
+./tools/setup_vpn_client.sh
+
+# Connect to VPN
+./tools/vpn_helper.sh connect
+
+# Check status
+./tools/vpn_helper.sh status
+```
+
+> **Note**: Requires `--privileged` mode (already configured in devcontainer.json)
 
 ## 🔐 VPN Setup (Point-to-Site Connectivity)
 
@@ -145,6 +276,7 @@ cd enterprise-foundry-aca-setup
 # Copy example configs and customize
 cp terraform/network/terraform.tfvars.example terraform/network/terraform.tfvars
 cp terraform/aca_env/terraform.tfvars.example terraform/aca_env/terraform.tfvars
+cp terraform/ai_services/terraform.tfvars.example terraform/ai_services/terraform.tfvars
 cp terraform/container_apps/terraform.tfvars.example terraform/container_apps/terraform.tfvars
 
 # Edit each terraform.tfvars with your values
@@ -166,7 +298,7 @@ Use the interactive Terraform executor:
 ```
 
 **Menu options:**
-- `1-3` - Toggle module selection
+- `1-4` - Toggle module selection
 - `a` - Select all modules
 - `p` - Plan (preview changes)
 - `d` - Deploy selected modules
@@ -176,21 +308,25 @@ Use the interactive Terraform executor:
 **Deployment order** (handled automatically):
 1. `network` - VNets, VMs, Storage, ACR, Private Endpoints
 2. `aca_env` - Azure Container Apps Environment
-3. `container_apps` - Test container applications
+3. `ai_services` - Document Intelligence, AI Search, Private Endpoints
+4. `container_apps` - Test container applications
 
-## � Documentation
+## 📚 Documentation
 
 For detailed guides and references:
 
 - **[Network Infrastructure Guide](terraform/network/README.md)** - Complete hub-and-spoke network setup, VPN configuration, troubleshooting
+- **[VPN & Tools Guide](tools/README.md)** - VPN client setup, helper scripts, troubleshooting
+- **[Container Apps Guide](src/README.md)** - Building and deploying container applications
 - **Architecture Diagrams** - See above and `architecture_diagram.svg`
 - **Terraform Examples** - See `terraform.tfvars.example` in each module
-- **Helper Scripts** - See `tools/` directory
 
 ## 📁 Project Structure
 
 ```
 enterprise-foundry-aca-setup/
+├── .devcontainer/                  # VS Code Dev Container configuration
+│   └── devcontainer.json           # Container settings, tools, VPN support
 ├── 00_install_prerequisites.sh     # Install Azure CLI + Terraform
 ├── 01_terraform.sh                 # Interactive deployment script
 ├── architecture_diagram.svg        # Visual architecture diagram
@@ -215,13 +351,20 @@ enterprise-foundry-aca-setup/
 │   │   ├── variables.tf
 │   │   ├── outputs.tf
 │   │   └── terraform.tfvars.example
+│   ├── ai_services/                # AI Services (Doc Intel, AI Search)
+│   │   ├── main.tf
+│   │   ├── variables.tf
+│   │   ├── outputs.tf
+│   │   └── terraform.tfvars.example
 │   └── container_apps/             # Test container applications
 │       ├── main.tf
 │       ├── variables.tf
 │       ├── outputs.tf
 │       └── terraform.tfvars.example
 └── tools/
+    ├── README.md                   # Tools documentation
     ├── generate_vpn_certificates.sh # VPN certificate generation
+    ├── setup_vpn_client.sh         # Automated VPN client setup
     ├── vpn_helper.sh               # VPN management & diagnostics
     ├── monitor_onprem.sh           # Monitor VM connectivity test
     ├── monitor_storage.sh          # Monitor storage PE test
@@ -325,6 +468,8 @@ See [Container Apps Development Guide](src/README.md) for detailed documentation
 | network | `acr_name` | Globally unique container registry name |
 | aca_env | `vnet_name` | Sandbox VNet name (from network module) |
 | aca_env | `subnet_aca` | ACA subnet name (from network module) |
+| ai_services | `docintel_name` | Globally unique Document Intelligence name |
+| ai_services | `search_name` | Globally unique AI Search name |
 | container_apps | `aca_env_name` | ACA environment name (from aca_env module) |
 | container_apps | `storage_account_name` | Storage account name (from network module) |
 
