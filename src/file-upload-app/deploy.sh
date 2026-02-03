@@ -45,7 +45,7 @@ if [ -z "$APP_EXISTS" ]; then
         --resource-group "$RESOURCE_GROUP" \
         --environment "$ACA_ENV_NAME" \
         --image "$FULL_IMAGE_NAME" \
-        --target-port 80 \
+        --target-port 8080 \
         --ingress internal \
         --min-replicas 1 \
         --max-replicas 3 \
@@ -55,7 +55,7 @@ if [ -z "$APP_EXISTS" ]; then
         --registry-identity "$IDENTITY_ID" \
         --user-assigned "$IDENTITY_ID" \
         --env-vars \
-            PORT=80 \
+            PORT=8080 \
             UPLOAD_FOLDER=/app/uploads \
             MAX_CONTENT_LENGTH=16777216
 else
