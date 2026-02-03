@@ -356,7 +356,7 @@ resource "azurerm_virtual_network_peering" "sbx_to_hub" {
   remote_virtual_network_id    = local.hub_vnet_id
   allow_virtual_network_access = true
   allow_forwarded_traffic      = true
-  use_remote_gateways          = var.create_hub_vnet && var.create_vpn_gateway ? true : false
+  use_remote_gateways          = var.use_hub_gateway
 
   depends_on = [
     azurerm_virtual_network_peering.hub_to_sbx,
@@ -385,7 +385,7 @@ resource "azurerm_virtual_network_peering" "onprem_to_hub" {
   remote_virtual_network_id    = local.hub_vnet_id
   allow_virtual_network_access = true
   allow_forwarded_traffic      = true
-  use_remote_gateways          = var.create_hub_vnet && var.create_vpn_gateway ? true : false
+  use_remote_gateways          = var.use_hub_gateway
 
   depends_on = [
     azurerm_virtual_network_peering.hub_to_onprem,
@@ -453,7 +453,7 @@ resource "azurerm_storage_account" "main" {
   allow_nested_items_to_be_public = false
 
   # Use Azure AD for data plane auth (required with storage_use_azuread = true)
-  shared_access_key_enabled       = true
+  shared_access_key_enabled       = false
   default_to_oauth_authentication = true
 }
 

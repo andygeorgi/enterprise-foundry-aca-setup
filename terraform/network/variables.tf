@@ -73,6 +73,12 @@ variable "create_vpn_gateway" {
   default     = true
 }
 
+variable "use_hub_gateway" {
+  type        = bool
+  description = "Whether spoke VNets should use the hub's VPN gateway (use_remote_gateways). Set to true if the hub has an existing VPN/ExpressRoute gateway."
+  default     = true
+}
+
 variable "vpn_gateway_sku" {
   type        = string
   description = "VPN Gateway SKU (VpnGw1, VpnGw2, VpnGw3, VpnGw1AZ, etc.)"

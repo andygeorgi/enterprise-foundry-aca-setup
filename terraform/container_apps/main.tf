@@ -75,7 +75,7 @@ resource "azurerm_container_app" "onprem_test" {
 
       command = ["/bin/sh", "-c"]
       args = [
-        "apk add --no-cache curl busybox-extras; mkdir -p /tmp; echo 'HEALTH OK' > /tmp/index.html; (busybox httpd -f -p 0.0.0.0:8080 -h /tmp) & while true; do TS=$(date -Iseconds); for P in 80 443; do if (echo > /dev/tcp/${data.azurerm_network_interface.onprem_nic.private_ip_address}/$P) 2>/dev/null; then TCP=OK; else TCP=FAIL; fi; if curl -k -sS --max-time 3 --connect-timeout 2 http://${data.azurerm_network_interface.onprem_nic.private_ip_address}:$P >/dev/null 2>&1; then HTTP=OK; else HTTP=FAIL; fi; echo \"[$TS] onprem ${data.azurerm_network_interface.onprem_nic.private_ip_address} port $P TCP=$TCP HTTP=$HTTP\"; done; sleep 15; done"
+        "apk add --no-cache curl python3; mkdir -p /tmp/www; echo 'HEALTH OK - onprem-test' > /tmp/www/index.html; (cd /tmp/www && python3 -m http.server 8080) & while true; do TS=$(date -Iseconds); for P in 80 443; do if (echo > /dev/tcp/${data.azurerm_network_interface.onprem_nic.private_ip_address}/$P) 2>/dev/null; then TCP=OK; else TCP=FAIL; fi; if curl -k -sS --max-time 3 --connect-timeout 2 http://${data.azurerm_network_interface.onprem_nic.private_ip_address}:$P >/dev/null 2>&1; then HTTP=OK; else HTTP=FAIL; fi; echo \"[$TS] onprem ${data.azurerm_network_interface.onprem_nic.private_ip_address} port $P TCP=$TCP HTTP=$HTTP\"; done; sleep 15; done"
       ]
     }
   }
@@ -116,7 +116,7 @@ resource "azurerm_container_app" "pe_storage_test" {
 
       command = ["/bin/sh", "-c"]
       args = [
-        "apk add --no-cache curl jq bind-tools busybox-extras; mkdir -p /tmp; echo 'HEALTH OK' > /tmp/index.html; (busybox httpd -f -p 0.0.0.0:8080 -h /tmp) & get_token() { curl -sS -H \"X-IDENTITY-HEADER: $IDENTITY_HEADER\" \"$IDENTITY_ENDPOINT?api-version=2019-08-01&resource=$1\" | jq -r '.access_token'; }; resolve_host() { nslookup $1 2>/dev/null | awk '/Address/ {print $2}' | tail -n1 || getent hosts $1 | awk '{print $1}'; }; ST_FQDN=${var.storage_account_name}.blob.core.windows.net; while true; do TS=$(date -Iseconds); ST_PRIV_IP=$(resolve_host $ST_FQDN); ST_TOKEN=$(get_token https://storage.azure.com/); ST_RSP=$(curl -sS -X GET -H \"Authorization: Bearer $ST_TOKEN\" -H 'x-ms-version: 2021-08-06' \"https://$ST_FQDN/${var.storage_container_name}?restype=container&comp=list\" 2>&1); RSP_LEN=$(echo $ST_RSP | wc -c); echo \"[$TS] blob FQDN=$ST_FQDN privIP=$ST_PRIV_IP list_result_len=$RSP_LEN\"; sleep 30; done"
+        "apk add --no-cache curl jq bind-tools python3; mkdir -p /tmp/www; echo 'HEALTH OK - pe-storage-test' > /tmp/www/index.html; (cd /tmp/www && python3 -m http.server 8080) & get_token() { curl -sS -H \"X-IDENTITY-HEADER: $IDENTITY_HEADER\" \"$IDENTITY_ENDPOINT?api-version=2019-08-01&resource=$1\" | jq -r '.access_token'; }; resolve_host() { nslookup $1 2>/dev/null | awk '/Address/ {print $2}' | tail -n1 || getent hosts $1 | awk '{print $1}'; }; ST_FQDN=${var.storage_account_name}.blob.core.windows.net; while true; do TS=$(date -Iseconds); ST_PRIV_IP=$(resolve_host $ST_FQDN); ST_TOKEN=$(get_token https://storage.azure.com/); ST_RSP=$(curl -sS -X GET -H \"Authorization: Bearer $ST_TOKEN\" -H 'x-ms-version: 2021-08-06' \"https://$ST_FQDN/${var.storage_container_name}?restype=container&comp=list\" 2>&1); RSP_LEN=$(echo $ST_RSP | wc -c); echo \"[$TS] blob FQDN=$ST_FQDN privIP=$ST_PRIV_IP list_result_len=$RSP_LEN\"; sleep 30; done"
       ]
     }
   }

@@ -82,6 +82,9 @@ resource "azurerm_cognitive_account" "docintel" {
   # Disable public access - only via Private Endpoint
   public_network_access_enabled = false
 
+  # Disable local/key-based auth - use Azure AD only
+  local_auth_enabled = false
+
   network_acls {
     default_action = "Deny"
   }

@@ -58,6 +58,15 @@ resource "azurerm_container_app_environment" "aca_env" {
   # ACA infrastructure subnet – minimum /27 required
   infrastructure_subnet_id = data.azurerm_subnet.aca.id
 
+  # Managed resource group for ACA infrastructure (auto-created by Azure)
+  infrastructure_resource_group_name = "ME_${var.aca_env_name}_${var.rg_app}_${var.location}"
+
+  # Consumption workload profile - serverless, pay-per-use, scale to zero
+  workload_profile {
+    name                  = "Consumption"
+    workload_profile_type = "Consumption"
+  }
+
   # Wire diagnostics
   log_analytics_workspace_id = azurerm_log_analytics_workspace.laws.id
 

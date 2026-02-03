@@ -32,6 +32,5 @@ output "logs_commands" {
   value = {
     onprem_test     = "az containerapp logs show -g ${var.rg_app} -n ${azurerm_container_app.onprem_test.name} --follow"
     pe_storage_test = "az containerapp logs show -g ${var.rg_app} -n ${azurerm_container_app.pe_storage_test.name} --follow"
-    file_upload     = "az containerapp logs show -g ${var.rg_app} -n ${azurerm_container_app.file_upload.name} --follow"
   }
 }
