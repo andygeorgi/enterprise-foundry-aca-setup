@@ -18,10 +18,11 @@ NC='\033[0m'
 BOLD='\033[1m'
 
 # Module definitions (in dependency order for apply)
-MODULES=("network" "aca_env" "container_apps")
+MODULES=("network" "aca_env" "ai_services" "container_apps")
 MODULE_DESCRIPTIONS=(
     "network        - VNets, Peerings, VM, Storage, ACR, Private Endpoints"
     "aca_env        - Azure Container Apps Environment"
+    "ai_services    - Document Intelligence, AI Search (Private Endpoints)"
     "container_apps - Test Container Apps (on-prem & storage tests)"
 )
 
@@ -29,6 +30,7 @@ MODULE_DESCRIPTIONS=(
 declare -A MODULE_REQUIRED_VARS
 MODULE_REQUIRED_VARS["network"]=""  # All have defaults
 MODULE_REQUIRED_VARS["aca_env"]="subscription_id location rg_net rg_app vnet_name subnet_aca"
+MODULE_REQUIRED_VARS["ai_services"]=""  # All have defaults
 MODULE_REQUIRED_VARS["container_apps"]="subscription_id location rg_net rg_app aca_env_name storage_account_name"
 
 # Track selected modules
@@ -298,7 +300,7 @@ while true; do
     print_modules
     
     echo -e "${BOLD}Actions:${NC}"
-    echo -e "  ${BOLD}1-3${NC}  Toggle module selection"
+    echo -e "  ${BOLD}1-4${NC}  Toggle module selection"
     echo -e "  ${BOLD}a${NC}    Select all"
     echo -e "  ${BOLD}n${NC}    Select none"
     echo -e "  ${BOLD}───────────────────────${NC}"
@@ -315,7 +317,8 @@ while true; do
     case $choice in
         1) toggle_module "network" ;;
         2) toggle_module "aca_env" ;;
-        3) toggle_module "container_apps" ;;
+        3) toggle_module "ai_services" ;;
+        4) toggle_module "container_apps" ;;
         a|A) select_all ;;
         n|N) select_none ;;
         p|P) execute_action "plan" ;;

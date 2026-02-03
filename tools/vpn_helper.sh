@@ -12,9 +12,9 @@ YELLOW='\033[1;33m'
 RED='\033[0;31m'
 NC='\033[0m'
 
-# Configuration
-RG_NAME="rg-foundry-sbx-net1"
-VPN_GW_NAME="vpngw-vnet-hub-sbc"
+# Configuration - can be overridden via environment variables
+RG_NAME="${RG_NAME:-rg-foundry-sbx-net}"
+VPN_GW_NAME="${VPN_GW_NAME:-vpngw-vnet-hub-weu}"
 
 show_menu() {
     echo -e "${GREEN}================================${NC}"

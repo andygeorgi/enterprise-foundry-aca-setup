@@ -12,11 +12,11 @@ YELLOW='\033[1;33m'
 RED='\033[0;31m'
 NC='\033[0m'
 
-# Configuration
+# Configuration - can be overridden via environment variables
 CERT_DIR="${HOME}/vpn-certs"
 VPN_DIR="${HOME}/OpenVPN"
-RG_NAME="rg-foundry-sbx-net1"
-VPN_GW_NAME="vpngw-vnet-hub-sbc"
+RG_NAME="${RG_NAME:-rg-foundry-sbx-net}"
+VPN_GW_NAME="${VPN_GW_NAME:-vpngw-vnet-hub-weu}"
 
 echo -e "${GREEN}========================================${NC}"
 echo -e "${GREEN}Azure VPN Client Setup Script${NC}"
