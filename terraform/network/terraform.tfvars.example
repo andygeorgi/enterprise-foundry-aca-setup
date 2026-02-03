@@ -12,15 +12,28 @@ location        = "westeurope"  # or your preferred Azure region
 rg_net = "rg-foundry-sbx-net"
 rg_app = "rg-foundry-sbx-app"
 
-# ======= Hub VNet (simulates corporate hub) =======
-hub_vnet_name   = "vnet-hub"
+# ======= Hub VNet Configuration =======
+# Set create_hub_vnet = true to create a new hub VNet with VPN Gateway
+# Set create_hub_vnet = false to use an existing hub VNet
+create_hub_vnet = true
+
+# If using existing hub VNet (create_hub_vnet = false), specify:
+# existing_hub_vnet_rg = "my-existing-hub-rg"
+
+# ======= Hub VNet (central hub with VPN Gateway) =======
+hub_vnet_name   = "vnet-hub-weu"
 hub_vnet_prefix = "10.0.0.0/16"
 
-hub_snet_gw_name   = "GatewaySubnet"
-hub_snet_gw_prefix = "10.0.1.0/24"
+hub_snet_gw_prefix = "10.0.1.0/24"    # GatewaySubnet for VPN Gateway
+hub_snet_fw_prefix = "10.0.2.0/24"    # AzureFirewallSubnet (optional)
 
-hub_snet_fw_name   = "AzureFirewallSubnet"
-hub_snet_fw_prefix = "10.0.2.0/24"
+# ======= VPN Gateway Configuration =======
+# Only applies if create_hub_vnet = true
+create_vpn_gateway        = true            # Set to false to skip VPN Gateway creation
+vpn_gateway_sku           = "VpnGw1"        # Options: VpnGw1, VpnGw2, VpnGw3
+vpn_client_address_space  = "172.16.0.0/24" # Address pool for VPN clients
+vpn_root_cert_name        = "P2SRootCert"
+# vpn_root_cert_data is required - see instructions below for generating certificates
 
 # ======= Sandbox VNet =======
 sbx_vnet_name   = "vnet-foundry-sbx"

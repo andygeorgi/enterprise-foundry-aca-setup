@@ -22,3 +22,11 @@ app_pe_storage_name = "aca-pe-storage-test"
 # ======= Storage Account (must match network module) =======
 storage_account_name   = "<your-storage-account-name>"
 storage_container_name = "test"
+
+# ======= Azure Container Registry (must match network module) =======
+acr_name = "<your-acr-name>"
+
+# ======= File Upload App Configuration =======
+app_file_upload_name     = "aca-file-upload"
+file_upload_image_name   = "file-upload-app"
+file_upload_image_tag    = "latest"

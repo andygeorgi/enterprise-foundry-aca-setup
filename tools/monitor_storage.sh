@@ -5,7 +5,7 @@
 set -euo pipefail
 
 # Configuration
-RG_APP="${RG_APP:-rg-foundry-sbx-app}"
+RG_APP="${RG_APP:-rg-hexpert-sbx-app}"
 APP_STORAGE="${APP_PE_TEST_NAME:-aca-pe-storage-test}"
 
 # Colors

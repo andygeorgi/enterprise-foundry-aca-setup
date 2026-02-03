@@ -5,7 +5,7 @@
 set -euo pipefail
 
 # Configuration
-RG_APP="${RG_APP:-rg-foundry-sbx-app}"
+RG_APP="${RG_APP:-rg-hexpert-sbx-app}"
 APP_ONPREM="${APP_ONPREM_NAME:-aca-onprem-connectivity-test}"
 
 # Colors
