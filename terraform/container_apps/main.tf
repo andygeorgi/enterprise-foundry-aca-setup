@@ -53,7 +53,7 @@ resource "azurerm_container_app" "onprem_test" {
   revision_mode                = "Single"
 
   ingress {
-    external_enabled = false  # internal ingress
+    external_enabled = true  # external to ACA env (still private due to internal env)
     target_port      = 8080
     transport        = "auto"
 
@@ -94,7 +94,7 @@ resource "azurerm_container_app" "pe_storage_test" {
   }
 
   ingress {
-    external_enabled = false
+    external_enabled = true  # external to ACA env (still private due to internal env)
     target_port      = 8080
     transport        = "auto"
 
