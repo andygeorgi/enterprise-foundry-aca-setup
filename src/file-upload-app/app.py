@@ -459,7 +459,7 @@ def health():
     return jsonify({'status': 'healthy', 'service': 'file-upload-app'}), 200
 
 if __name__ == '__main__':
-    port = int(os.environ.get('PORT', 80))
+    port = int(os.environ.get('PORT', 8080))
     print(f"🚀 File Upload App starting on port {port}")
     print(f"📁 Upload folder: {UPLOAD_FOLDER}")
     print(f"📊 Max file size: {MAX_CONTENT_LENGTH / (1024*1024):.1f}MB")

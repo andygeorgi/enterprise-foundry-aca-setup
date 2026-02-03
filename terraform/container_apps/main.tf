@@ -161,8 +161,8 @@ resource "azurerm_container_app" "file_upload" {
   }
 
   ingress {
-    external_enabled = false  # internal ingress
-    target_port      = 80
+    external_enabled = true 
+    target_port      = 8080
     transport        = "auto"
 
     traffic_weight {
@@ -183,7 +183,7 @@ resource "azurerm_container_app" "file_upload" {
 
       env {
         name  = "PORT"
-        value = "80"
+        value = "8080"
       }
 
       env {
