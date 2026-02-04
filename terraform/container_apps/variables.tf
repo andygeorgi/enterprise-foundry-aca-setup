@@ -68,3 +68,15 @@ variable "file_upload_image_tag" {
   description = "Tag of the file upload container image"
   default     = "latest"
 }
+
+variable "docintel_endpoint" {
+  type        = string
+  description = "Azure Document Intelligence endpoint URL (optional)"
+  default     = ""
+}
+
+variable "ai_services_identity_client_id" {
+  type        = string
+  description = "Client ID of the managed identity for AI services access (optional)"
+  default     = ""
+}

@@ -30,3 +30,11 @@ acr_name = "<your-acr-name>"
 app_file_upload_name     = "aca-file-upload"
 file_upload_image_name   = "file-upload-app"
 file_upload_image_tag    = "latest"
+
+# ======= Document Intelligence (optional - leave empty until ai_services module deployed) =======
+# After deploying ai_services module, get these values with:
+#   cd ../ai_services
+#   terraform output docintel_endpoint
+#   terraform output aca_ai_services_identity_client_id
+docintel_endpoint               = ""  # Example: "https://docintel-foundry-sbx.cognitiveservices.azure.com/"
+ai_services_identity_client_id  = ""  # Example: "12345678-1234-1234-1234-123456789abc"

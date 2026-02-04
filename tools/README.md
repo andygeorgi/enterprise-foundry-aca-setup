@@ -1,6 +1,42 @@
 # Helper Tools
 
-This directory contains helper scripts for managing Azure infrastructure and VPN connectivity.
+This directory contains helper scripts for managing Azure infrastructure, VPN connectivity, and Container App access.
+
+## Container App Access
+
+### start_aca_proxy.sh
+
+Starts a local proxy to the Azure Container App file-upload service, enabling access from your Windows host via port forwarding.
+
+**Usage:**
+```bash
+./tools/start_aca_proxy.sh
+```
+
+**What it does:**
+- Creates a local proxy on port 8080
+- Forwards traffic to the ACA file-upload app
+- Runs in background automatically
+- Logs to `/tmp/aca-proxy.log`
+
+**Access the app:**
+- From dev container: `http://localhost:8080`
+- From Windows host: `http://localhost:8080` (auto-forwarded by VS Code)
+
+**Note:** This script runs automatically when the dev container starts.
+
+---
+
+### stop_aca_proxy.sh
+
+Stops the ACA proxy service.
+
+**Usage:**
+```bash
+./tools/stop_aca_proxy.sh
+```
+
+---
 
 ## VPN Management Scripts
 

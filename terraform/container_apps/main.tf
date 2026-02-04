@@ -142,6 +142,20 @@ data "azurerm_user_assigned_identity" "aca_acr_pull" {
   resource_group_name = var.rg_app
 }
 
+# Lookup AI services managed identity (optional - may not exist yet)
+data "azurerm_user_assigned_identity" "aca_ai_services" {
+  count               = var.ai_services_identity_client_id != "" ? 1 : 0
+  name                = "id-aca-ai-services"
+  resource_group_name = var.rg_app
+}
+
+# Lookup Document Intelligence service for RBAC
+data "azurerm_cognitive_account" "docintel" {
+  count               = var.docintel_endpoint != "" ? 1 : 0
+  name                = "docintel-foundry-sbx1"
+  resource_group_name = var.rg_app
+}
+
 # --- Container App: File Upload App ---
 
 resource "azurerm_container_app" "file_upload" {
@@ -151,7 +165,7 @@ resource "azurerm_container_app" "file_upload" {
   revision_mode                = "Single"
 
   identity {
-    type         = "UserAssigned"
+    type         = "SystemAssigned, UserAssigned"
     identity_ids = [data.azurerm_user_assigned_identity.aca_acr_pull.id]
   }
 
@@ -161,9 +175,10 @@ resource "azurerm_container_app" "file_upload" {
   }
 
   ingress {
-    external_enabled = true 
-    target_port      = 8080
-    transport        = "auto"
+    external_enabled           = true 
+    target_port                = 8080
+    transport                  = "auto"
+    allow_insecure_connections = true
 
     traffic_weight {
       percentage      = 100
@@ -195,6 +210,25 @@ resource "azurerm_container_app" "file_upload" {
         name  = "MAX_CONTENT_LENGTH"
         value = "16777216"  # 16MB
       }
+
+      # Document Intelligence configuration (optional)
+      dynamic "env" {
+        for_each = var.docintel_endpoint != "" ? [1] : []
+        content {
+          name  = "AZURE_DOCINTEL_ENDPOINT"
+          value = var.docintel_endpoint
+        }
+      }
     }
   }
+}
+
+# RBAC: Grant system-assigned identity access to Document Intelligence
+resource "azurerm_role_assignment" "file_upload_docintel_user" {
+  count                = var.docintel_endpoint != "" ? 1 : 0
+  scope                = data.azurerm_cognitive_account.docintel[0].id
+  role_definition_name = "Cognitive Services User"
+  principal_id         = azurerm_container_app.file_upload.identity[0].principal_id
+  
+  depends_on = [azurerm_container_app.file_upload]
 }
