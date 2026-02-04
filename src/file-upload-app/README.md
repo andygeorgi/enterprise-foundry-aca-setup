@@ -1,22 +1,33 @@
-# File Upload Container App
+# File Upload Container App with Azure Document Intelligence
 
-A simple, production-ready web application for uploading multiple files. This app runs in Azure Container Apps with internal ingress for secure, VNet-only access.
+A production-ready web application for uploading and analyzing documents using Azure Document Intelligence (formerly Form Recognizer). This app runs in Azure Container Apps with internal ingress for secure, VNet-only access.
 
 ## Features
 
 - 📁 **Multiple File Upload** - Drag & drop or click to select multiple files
+- 🤖 **AI-Powered Analysis** - Automatic document processing with Azure Document Intelligence
+- 📊 **JSON Output** - Structured analysis results saved as JSON for later processing
 - 🎨 **Modern UI** - Clean, responsive interface with real-time feedback
-- 🔒 **Secure** - Internal ingress, non-root container, managed identity auth
-- 📊 **File Management** - Preview selected files with size information
+- 🔒 **Secure** - Internal ingress, managed identity authentication, non-root container
 - ✅ **Validation** - File type and size validation before upload
 - 🏥 **Health Checks** - Built-in health endpoint for monitoring
 
-## Supported File Types
+## Document Intelligence Capabilities
 
-- Documents: txt, pdf, doc, docx
-- Images: png, jpg, jpeg, gif
-- Archives: zip
-- Data: csv, json, xml
+The app uses Azure Document Intelligence to extract:
+
+- **Text Content** - Full text extraction from documents
+- **Layout Analysis** - Pages, lines, words with position information
+- **Tables** - Structured table data with row/column information
+- **Key-Value Pairs** - Form fields and their values
+- **Paragraphs** - Paragraph-level text with role detection
+
+### Supported File Types for AI Analysis
+
+- **Documents**: PDF
+- **Images**: PNG, JPG, JPEG, TIFF, BMP
+
+Other file types (txt, doc, docx, zip, csv, json, xml) are uploaded but not analyzed.
 
 Maximum file size: **16MB per file**
 
@@ -170,6 +181,91 @@ terraform output file_upload_app
 
 ## Configuration
 
+### API Endpoints
+
+#### `GET /`
+Web interface for uploading files.
+
+#### `POST /upload`
+Upload and analyze files with Document Intelligence.
+
+**Request:**
+- Content-Type: `multipart/form-data`
+- Body: Form field `files` with one or more files
+
+**Response:**
+```json
+{
+  "success": true,
+  "uploaded": 2,
+  "failed": 0,
+  "errors": [],
+  "results": [
+    {
+      "filename": "20260204_120000_document.pdf",
+      "original_filename": "document.pdf",
+      "size": 102400,
+      "processed": true,
+      "json_file": "20260204_120000_document.pdf.analysis.json",
+      "pages": 3,
+      "tables": 2,
+      "key_value_pairs": 15
+    }
+  ]
+}
+```
+
+#### `GET /analysis/<filename>`
+Retrieve the JSON analysis results for a specific file.
+
+**Example:**
+```bash
+curl https://aca-file-upload.internal/analysis/20260204_120000_document.pdf.analysis.json
+```
+
+**Response:**
+```json
+{
+  "processed": true,
+  "model_id": "prebuilt-document",
+  "content": "Full extracted text...",
+  "pages": [...],
+  "tables": [...],
+  "key_value_pairs": [...],
+  "paragraphs": [...]
+}
+```
+
+#### `GET /files`
+List all uploaded files and their analysis status.
+
+**Response:**
+```json
+{
+  "files": [
+    {
+      "filename": "20260204_120000_document.pdf",
+      "size": 102400,
+      "modified": "2026-02-04T12:00:00",
+      "has_analysis": true,
+      "analysis_url": "/analysis/20260204_120000_document.pdf.analysis.json"
+    }
+  ],
+  "count": 1
+}
+```
+
+#### `GET /health`
+Health check endpoint.
+
+**Response:**
+```json
+{
+  "status": "healthy",
+  "service": "file-upload-app"
+}
+```
+
 ### Environment Variables
 
 | Variable | Default | Description |
@@ -177,6 +273,10 @@ terraform output file_upload_app
 | `PORT` | `80` | Port the app listens on |
 | `UPLOAD_FOLDER` | `/app/uploads` | Directory to store uploaded files |
 | `MAX_CONTENT_LENGTH` | `16777216` | Max file size in bytes (16MB) |
+| `AZURE_DOCINTEL_ENDPOINT` | - | Azure Document Intelligence endpoint URL |
+| `AZURE_CLIENT_ID` | - | (Optional) Managed Identity client ID |
+
+**Note:** The app uses Azure Managed Identity for authentication. When running in Azure Container Apps, the managed identity is automatically configured.
 
 ### Terraform Variables
 
@@ -379,11 +479,15 @@ template {
 
 ## Next Steps
 
+- [x] ✅ Integrate Azure Document Intelligence for document analysis
+- [x] ✅ Extract and save JSON analysis results
+- [ ] Store analysis results in Azure Cosmos DB or SQL Database
+- [ ] Implement background processing queue (Azure Service Bus/Storage Queue)
+- [ ] Add Azure Storage Blob for persistent file storage
+- [ ] Build downstream processing pipelines for extracted data
 - [ ] Add authentication (Azure AD, Managed Identity)
-- [ ] Integrate with Azure Storage Blob for persistent file storage
-- [ ] Add file listing/download functionality
-- [ ] Implement file scanning (anti-virus, malware detection)
-- [ ] Add file metadata storage (database)
+- [ ] Implement file listing/download functionality
+- [ ] Add file scanning (anti-virus, malware detection)
 - [ ] Configure custom domain and certificates
 
 ## Support
