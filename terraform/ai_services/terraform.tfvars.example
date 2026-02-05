@@ -29,6 +29,20 @@ docintel_name = "docintel-foundry-sbx"
 search_name = "search-foundry-sbx"
 search_sku  = "basic"  # For sandbox; use 'standard' for production
 
+# Microsoft Foundry (AI Services) - must be globally unique
+foundry_name             = "foundry-sbx"
+foundry_sku              = "S0"
+embedding_model_name     = "text-embedding-ada-002"
+embedding_model_version  = "2"
+gpt4_model_name          = "gpt-4.1"
+gpt4_model_version       = "2025-04-14"
+deployment_capacity      = 10  # Token capacity in thousands
+
+# Foundry Project
+project_name         = "default-project"
+project_display_name = "Default Project"
+project_description  = "Default Foundry project for AI workloads"
+
 # Tags
 tags = {
   environment = "sandbox"

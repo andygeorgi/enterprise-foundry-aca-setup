@@ -17,6 +17,14 @@ terraform {
       source  = "hashicorp/azurerm"
       version = "~> 4.14.0"
     }
+    azapi = {
+      source  = "Azure/azapi"
+      version = "~> 2.0"
+    }
+    time = {
+      source  = "hashicorp/time"
+      version = "~> 0.12.0"
+    }
   }
 }
 
@@ -29,6 +37,10 @@ provider "azurerm" {
       purge_soft_delete_on_destroy = true
     }
   }
+  subscription_id = var.subscription_id
+}
+
+provider "azapi" {
   subscription_id = var.subscription_id
 }
 
@@ -97,7 +109,7 @@ resource "azurerm_cognitive_account" "docintel" {
 }
 
 ################################################################################
-# Private DNS Zone for Cognitive Services (Document Intelligence)
+# Private DNS Zone for Cognitive Services (Document Intelligence & Foundry)
 ################################################################################
 
 resource "azurerm_private_dns_zone" "cognitive" {
@@ -153,14 +165,14 @@ resource "azurerm_private_endpoint" "docintel" {
 ################################################################################
 
 resource "azurerm_search_service" "search" {
-  name                          = var.search_name
-  location                      = data.azurerm_resource_group.app.location
-  resource_group_name           = data.azurerm_resource_group.app.name
-  sku                           = var.search_sku
-  replica_count                 = 1
-  partition_count               = 1
-  semantic_search_sku           = "standard"  # Enable semantic search
-  
+  name                = var.search_name
+  location            = data.azurerm_resource_group.app.location
+  resource_group_name = data.azurerm_resource_group.app.name
+  sku                 = var.search_sku
+  replica_count       = 1
+  partition_count     = 1
+  semantic_search_sku = "standard" # Enable semantic search
+
   # Disable public access - only via Private Endpoint
   public_network_access_enabled = false
 
@@ -278,4 +290,128 @@ resource "azurerm_role_assignment" "docintel_storage_reader" {
   scope                = data.azurerm_storage_account.main.id
   role_definition_name = "Storage Blob Data Reader"
   principal_id         = azurerm_cognitive_account.docintel.identity[0].principal_id
+}
+
+################################################################################
+# Microsoft Foundry (AI Services)
+################################################################################
+
+resource "azapi_resource" "foundry" {
+  type                      = "Microsoft.CognitiveServices/accounts@2025-06-01"
+  name                      = var.foundry_name
+  parent_id                 = data.azurerm_resource_group.app.id
+  location                  = data.azurerm_resource_group.app.location
+  schema_validation_enabled = false
+
+  identity {
+    type = "SystemAssigned"
+  }
+
+  body = {
+    kind = "AIServices"
+    sku = {
+      name = var.foundry_sku
+    }
+    properties = {
+      # Support Entra ID authentication only
+      disableLocalAuth = true
+
+      # Enable project management for Foundry
+      allowProjectManagement = true
+
+      # Set custom subdomain for DNS
+      customSubDomainName = var.foundry_name
+
+      # Public access enabled
+      publicNetworkAccess = "Enabled"
+    }
+  }
+
+  tags = var.tags
+}
+
+################################################################################
+# Microsoft Foundry Default Project
+################################################################################
+
+resource "azapi_resource" "foundry_project" {
+  type                      = "Microsoft.CognitiveServices/accounts/projects@2025-06-01"
+  name                      = var.project_name
+  parent_id                 = azapi_resource.foundry.id
+  location                  = data.azurerm_resource_group.app.location
+  schema_validation_enabled = false
+
+  identity {
+    type = "SystemAssigned"
+  }
+
+  body = {
+    sku = {
+      name = "S0"
+    }
+    properties = {
+      displayName = var.project_display_name
+      description = var.project_description
+    }
+  }
+
+  tags = var.tags
+
+  depends_on = [azapi_resource.foundry]
+}
+
+################################################################################
+# Microsoft Foundry Model Deployments
+################################################################################
+
+# Text Embedding Ada-002 Deployment
+resource "azapi_resource" "embedding_deployment" {
+  type      = "Microsoft.CognitiveServices/accounts/deployments@2025-06-01"
+  name      = var.embedding_model_name
+  parent_id = azapi_resource.foundry.id
+
+  body = {
+    sku = {
+      name     = "Standard"
+      capacity = var.deployment_capacity
+    }
+    properties = {
+      model = {
+        format  = "OpenAI"
+        name    = var.embedding_model_name
+        version = var.embedding_model_version
+      }
+    }
+  }
+}
+
+# GPT-4.1 Deployment
+resource "azapi_resource" "gpt4_deployment" {
+  type      = "Microsoft.CognitiveServices/accounts/deployments@2025-06-01"
+  name      = var.gpt4_model_name
+  parent_id = azapi_resource.foundry.id
+
+  body = {
+    sku = {
+      name     = "Standard"
+      capacity = var.deployment_capacity
+    }
+    properties = {
+      model = {
+        format  = "OpenAI"
+        name    = var.gpt4_model_name
+        version = var.gpt4_model_version
+      }
+    }
+  }
+}
+
+################################################################################
+# RBAC: Container Apps Identity -> Microsoft Foundry
+################################################################################
+
+resource "azurerm_role_assignment" "aca_foundry_user" {
+  scope                = azapi_resource.foundry.id
+  role_definition_name = "Cognitive Services OpenAI User"
+  principal_id         = azurerm_user_assigned_identity.aca_ai_services.principal_id
 }
