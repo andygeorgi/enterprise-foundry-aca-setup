@@ -10,8 +10,9 @@ from typing import Annotated
 
 from agent_framework import tool
 from agent_framework.azure import AzureAIProjectAgentProvider
-from azure.identity.aio import AzureCliCredential
+from azure.identity.aio import DefaultAzureCredential
 from pydantic import Field
+from agent_framework.devui import serve
 
 
 # Define a code-based tool to tell the time
@@ -52,7 +53,12 @@ def get_current_time(
 
 # Define a tool to ping the private VM
 @tool(approval_mode="never_require")
-def ping_private_vm() -> str:
+def ping_private_vm(
+    count: Annotated[
+        int,
+        Field(description="Number of ping attempts. Defaults to 3.")
+    ] = 3,
+) -> str:
     """
     Ping the private on-premises VM to test connectivity.
     
@@ -63,12 +69,12 @@ def ping_private_vm() -> str:
     vm_ip = "10.7.1.4"  # Private on-prem VM IP
     
     try:
-        # Ping with count of 3 and timeout of 5 seconds
+        # Ping with specified count and timeout of 5 seconds
         result = subprocess.run(
-            ["ping", "-c", "3", "-W", "5", vm_ip],
+            ["ping", "-c", str(count), "-W", "5", vm_ip],
             capture_output=True,
             text=True,
-            timeout=10
+            timeout=15
         )
         
         if result.returncode == 0:
@@ -76,24 +82,24 @@ def ping_private_vm() -> str:
             lines = result.stdout.strip().split('\n')
             summary = [line for line in lines if 'packets transmitted' in line]
             if summary:
-                return f"✓ VM at {vm_ip} is reachable. {summary[0]}"
-            return f"✓ VM at {vm_ip} is reachable."
+                return f"VM at {vm_ip} is reachable. {summary[0]}"
+            return f"VM at {vm_ip} is reachable."
         else:
-            return f"✗ VM at {vm_ip} is not reachable (ping failed)"
+            return f"VM at {vm_ip} is not reachable (ping failed)"
     
     except subprocess.TimeoutExpired:
-        return f"✗ VM at {vm_ip} ping timeout"
+        return f"VM at {vm_ip} ping timeout"
     except Exception as e:
-        return f"✗ Error pinging VM at {vm_ip}: {str(e)}"
+        return f"Error pinging VM at {vm_ip}: {str(e)}"
 
 
-async def main():
-    """Main function to run the time agent."""
-    
-    import os
-    
+"""Main function to run the agent."""
+
+import os
+
+async def create_agent():
     # Get project endpoint from environment variable
-    project_endpoint = os.getenv("AZURE_AI_PROJECT_ENDPOINT")
+    project_endpoint = os.getenv("AZURE_AI_PROJECT_ENDPOINT", "https://foundry-sbx.services.ai.azure.com/api/projects/default-project")
     if not project_endpoint:
         raise ValueError(
             "AZURE_AI_PROJECT_ENDPOINT environment variable must be set. "
@@ -103,21 +109,20 @@ async def main():
     # Get model deployment name from environment variable
     model_deployment = os.getenv("AZURE_AI_MODEL_DEPLOYMENT_NAME", "gpt-4.1")
     
-    # For authentication, run `az login` command in terminal or replace
-    # AzureCliCredential with preferred authentication option.
+    # Use DefaultAzureCredential for authentication (supports managed identity in ACA)
     async with (
-        AzureCliCredential() as credential,
+        DefaultAzureCredential() as credential,
         AzureAIProjectAgentProvider(
             credential=credential,
             project_endpoint=project_endpoint
         ) as provider,
     ):
-        # Create an agent with the time tool
-        print(f"Creating agent with time tool (model: {model_deployment})...")
+        # Create an agent with the tools
+        print(f"Creating agent (model: {model_deployment})...")
         agent = await provider.create_agent(
             model=model_deployment,
-            name="TimeAgent",
-            instructions="""You are a helpful time assistant. When asked about the time,
+            name="SampleAgent",
+            instructions="""You are a helpful assistant. When asked about the time,
 use the get_current_time tool to provide accurate information.
 You can tell time in any timezone the user requests.
 You can also ping the private VM to test connectivity.
@@ -125,23 +130,10 @@ Be friendly and concise in your responses.""",
             tools=[get_current_time, ping_private_vm],
         )
         print(f"✓ Agent created: {agent.id}\n")
-        
-        # Example interactions using agent.run()
-        queries = [
-            "What time is it?",
-            "Can you ping the private VM?",
-            "What time is it in US/Eastern?",
-        ]
-        
-        for query in queries:
-            print(f"{'='*60}")
-            print(f"User: {query}")
-            print(f"{'='*60}")
-            
-            # Run the agent with the query
-            result = await agent.run(query)
-            print(f"Agent: {result}\n")
+        return agent
 
 
-if __name__ == "__main__":
-    asyncio.run(main())
+# Run the agent creation and serve
+agent = asyncio.run(create_agent())
+serve(entities=[agent], port=8081, auto_open=True)
+

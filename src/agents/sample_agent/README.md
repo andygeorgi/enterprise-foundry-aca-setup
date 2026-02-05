@@ -9,13 +9,16 @@ This agent demonstrates:
 - Defining code-based tools using the `@tool` decorator
 - Running an agent with function calling capabilities using `agent.run()`
 - Basic conversation flow with tool execution
+- Deployment to Azure Container Apps
 
 ## The Tools
 
 1. **get_current_time** - Gets the current time in any timezone
 2. **ping_private_vm** - Pings the private on-premises VM to test connectivity
 
-## Prerequisites
+## Local Development
+
+### Prerequisites
 
 1. **Azure AI Services**: Foundry deployed via Terraform (already done!)
 2. **Authentication**: Azure CLI login (`az login`)
@@ -26,16 +29,14 @@ This agent demonstrates:
    export AZURE_AI_MODEL_DEPLOYMENT_NAME="gpt-4.1"
    ```
 
-## Installation
+### Installation
 
 ```bash
 cd /workspaces/enterprise-foundry-aca-setup/src/agents/sample_agent
 pip install -r requirements.txt
 ```
 
-## Usage
-
-### Quick Run
+### Local Run
 
 ```bash
 cd /workspaces/enterprise-foundry-aca-setup/src/agents/sample_agent
@@ -44,20 +45,70 @@ export AZURE_AI_MODEL_DEPLOYMENT_NAME="gpt-4.1"
 python sample_agent.py
 ```
 
-### Expected Output
+The agent UI will be available at http://127.0.0.1:8081
 
-The agent will:
-1. Create an agent with tools
-2. Ask questions and use the appropriate tools
-3. Respond with results
+## Azure Container Apps Deployment
 
-Example interactions:
+### Build and Push Docker Image
+
+```bash
+cd /workspaces/enterprise-foundry-aca-setup/src/agents/sample_agent
+./build.sh
+```
+
+This will:
+1. Login to ACR
+2. Build the Docker image
+3. Push to Azure Container Registry
+
+### Deploy to Container Apps
+
+**Option 1: Full automated deployment**
+```bash
+./deploy.sh
+```
+
+**Option 2: Manual Terraform deployment**
+```bash
+cd ../../terraform/container_apps
+terraform init
+terraform plan -out=sample_agent.tfplan
+terraform apply sample_agent.tfplan
+```
+
+### Get App URL
+
+```bash
+cd terraform/container_apps
+terraform output sample_agent_app
+```
+
+### View Logs
+
+```bash
+az containerapp logs show -g rg-foundry-sbx-app1 -n aca-sample-agent --follow
+```
+
+## Configuration
+
+The container app uses managed identity for authentication and has access to:
+- Azure AI services via the user-assigned managed identity
+- Private network resources (including the on-prem VM)
+- Azure Container Registry for pulling images
+
+Environment variables in the container:
+- `AZURE_AI_PROJECT_ENDPOINT` - AI project endpoint
+- `AZURE_AI_MODEL_DEPLOYMENT_NAME` - Model deployment name (gpt-4.1)
+- `AZURE_CLIENT_ID` - Managed identity client ID (for authentication)
+
+## Example Interactions
+
 ```
 User: What time is it?
 Agent: The current time in UTC is Thursday, February 5, 2026 at 8:59 AM.
 
 User: Can you ping the private VM?
-Agent: I tried to ping the private VM, but it is not reachable (ping failed).
+Agent: VM at 10.7.1.4 is reachable. 3 packets transmitted, 3 received, 0% packet loss
 
 User: What time is it in US/Eastern?
 Agent: The current time in US/Eastern is Thursday, February 5, 2026, at 3:59 AM EST.
@@ -73,7 +124,7 @@ def get_current_time(timezone_name: str = "UTC") -> str:
     pass
 
 @tool(approval_mode="never_require")
-def ping_private_vm() -> str:
+def ping_private_vm(count: int = 3) -> str:
     # Tool implementation
     pass
 
@@ -87,13 +138,13 @@ async with (
 ):
     agent = await provider.create_agent(
         model=model_deployment,
-        name="TimeAgent",
+        name="SampleAgent",
         instructions="...",
         tools=[get_current_time, ping_private_vm],
     )
     
-    # 3. Run conversations using agent.run()
-    result = await agent.run("What time is it?")
+    # 3. Serve the agent
+    serve(entities=[agent], port=8081)
 ```
 
 ## Customization
