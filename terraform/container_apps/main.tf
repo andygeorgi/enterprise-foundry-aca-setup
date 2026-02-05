@@ -142,17 +142,17 @@ data "azurerm_user_assigned_identity" "aca_acr_pull" {
   resource_group_name = var.rg_app
 }
 
-# Lookup AI services managed identity (optional - may not exist yet)
-data "azurerm_user_assigned_identity" "aca_ai_services" {
-  count               = var.ai_services_identity_client_id != "" ? 1 : 0
-  name                = "id-aca-ai-services"
-  resource_group_name = var.rg_app
-}
-
 # Lookup Document Intelligence service for RBAC
 data "azurerm_cognitive_account" "docintel" {
   count               = var.docintel_endpoint != "" ? 1 : 0
   name                = "docintel-foundry-sbx1"
+  resource_group_name = var.rg_app
+}
+
+# Lookup Azure AI Foundry service for RBAC (optional)
+data "azurerm_cognitive_account" "foundry" {
+  count               = var.azure_ai_project_endpoint != "" ? 1 : 0
+  name                = "foundry-sbx"  # Must match foundry_name from ai_services module
   resource_group_name = var.rg_app
 }
 
@@ -223,12 +223,97 @@ resource "azurerm_container_app" "file_upload" {
   }
 }
 
+# RBAC: Grant file_upload system-assigned identity access to ACR
+resource "azurerm_role_assignment" "file_upload_acr_pull" {
+  scope                = data.azurerm_container_registry.acr.id
+  role_definition_name = "AcrPull"
+  principal_id         = azurerm_container_app.file_upload.identity[0].principal_id
+  
+  depends_on = [azurerm_container_app.file_upload]
+}
+
 # RBAC: Grant system-assigned identity access to Document Intelligence
 resource "azurerm_role_assignment" "file_upload_docintel_user" {
   count                = var.docintel_endpoint != "" ? 1 : 0
   scope                = data.azurerm_cognitive_account.docintel[0].id
-  role_definition_name = "Cognitive Services User"
+  role_definition_name = "Cognitive Services OpenAI User"
   principal_id         = azurerm_container_app.file_upload.identity[0].principal_id
   
   depends_on = [azurerm_container_app.file_upload]
+}
+
+# --- Container App: Sample Agent ---
+
+resource "azurerm_container_app" "sample_agent" {
+  name                         = var.app_sample_agent_name
+  container_app_environment_id = data.azurerm_container_app_environment.aca_env.id
+  resource_group_name          = var.rg_app
+  revision_mode                = "Single"
+
+  identity {
+    type         = "SystemAssigned, UserAssigned"
+    identity_ids = [data.azurerm_user_assigned_identity.aca_acr_pull.id]
+  }
+
+  registry {
+    server   = data.azurerm_container_registry.acr.login_server
+    identity = data.azurerm_user_assigned_identity.aca_acr_pull.id
+  }
+
+  ingress {
+    external_enabled           = true 
+    target_port                = 8081
+    transport                  = "auto"
+    allow_insecure_connections = true
+
+    traffic_weight {
+      percentage      = 100
+      latest_revision = true
+    }
+  }
+
+  template {
+    min_replicas = 1
+    max_replicas = 2
+
+    container {
+      name   = "sample-agent"
+      image  = "${data.azurerm_container_registry.acr.login_server}/${var.sample_agent_image_name}:${var.sample_agent_image_tag}"
+      cpu    = 0.5
+      memory = "1Gi"
+
+      env {
+        name  = "AZURE_AI_PROJECT_ENDPOINT"
+        value = var.azure_ai_project_endpoint
+      }
+
+      env {
+        name  = "AZURE_AI_MODEL_DEPLOYMENT_NAME"
+        value = var.azure_ai_model_deployment_name
+      }
+    }
+  }
+
+  depends_on = [
+    azurerm_container_app.file_upload
+  ]
+}
+
+# RBAC: Grant sample_agent system-assigned identity access to ACR
+resource "azurerm_role_assignment" "sample_agent_acr_pull" {
+  scope                = data.azurerm_container_registry.acr.id
+  role_definition_name = "AcrPull"
+  principal_id         = azurerm_container_app.sample_agent.identity[0].principal_id
+  
+  depends_on = [azurerm_container_app.sample_agent]
+}
+
+# RBAC: Grant sample agent system-assigned identity access to Azure AI Foundry
+resource "azurerm_role_assignment" "sample_agent_foundry_user" {
+  count                = var.azure_ai_project_endpoint != "" ? 1 : 0
+  scope                = data.azurerm_cognitive_account.foundry[0].id
+  role_definition_name = "Azure AI User"
+  principal_id         = azurerm_container_app.sample_agent.identity[0].principal_id
+  
+  depends_on = [azurerm_container_app.sample_agent]
 }
