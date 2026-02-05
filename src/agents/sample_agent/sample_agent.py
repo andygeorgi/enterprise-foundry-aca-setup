@@ -1,8 +1,8 @@
 """
-Simple Foundry Agent with Time Tool Example
+Sample Foundry Agent with Tools
 
 This demonstrates a minimal agent using Foundry's agent framework
-with a code-based tool that tells the current time.
+with code-based tools (time and network connectivity).
 """
 import asyncio
 from datetime import datetime, timezone

@@ -1,21 +1,19 @@
-# Simple Time Agent
+# Sample Agent
 
-A minimal example of using Foundry's agent framework with a code-based tool (v2 API).
+A minimal example of using Foundry's agent framework with code-based tools (v2 API).
 
 ## Overview
 
 This agent demonstrates:
 - Creating an agent with Azure AI Project Agent Provider (v2 API)
-- Defining a code-based tool using the `@tool` decorator
+- Defining code-based tools using the `@tool` decorator
 - Running an agent with function calling capabilities using `agent.run()`
 - Basic conversation flow with tool execution
 
-## The Tool
+## The Tools
 
-The `get_current_time` tool:
-- Takes an optional timezone parameter
-- Returns the current time in that timezone
-- Handles errors gracefully
+1. **get_current_time** - Gets the current time in any timezone
+2. **ping_private_vm** - Pings the private on-premises VM to test connectivity
 
 ## Prerequisites
 
@@ -25,57 +23,61 @@ The `get_current_time` tool:
    
    ```bash
    export AZURE_AI_PROJECT_ENDPOINT="https://foundry-sbx.services.ai.azure.com/api/projects/default-project"
+   export AZURE_AI_MODEL_DEPLOYMENT_NAME="gpt-4.1"
    ```
-   
-   The agent uses the deployed Foundry instance with GPT-4.1 model.
 
 ## Installation
 
 ```bash
-cd /workspaces/enterprise-foundry-aca-setup/src/agents/simple_time_agent
+cd /workspaces/enterprise-foundry-aca-setup/src/agents/sample_agent
 pip install -r requirements.txt
 ```
 
 ## Usage
 
-### Quick Run (Uses Deployed Foundry)
+### Quick Run
 
 ```bash
-cd /workspaces/enterprise-foundry-aca-setup/src/agents/simple_time_agent
+cd /workspaces/enterprise-foundry-aca-setup/src/agents/sample_agent
 export AZURE_AI_PROJECT_ENDPOINT="https://foundry-sbx.services.ai.azure.com/api/projects/default-project"
-python simple_time_agent.py
+export AZURE_AI_MODEL_DEPLOYMENT_NAME="gpt-4.1"
+python sample_agent.py
 ```
-
-The agent automatically uses:
-- **Endpoint**: Configured via `AZURE_AI_PROJECT_ENDPOINT`
-- **Model**: `gpt-4.1` (deployed via Terraform)
 
 ### Expected Output
 
 The agent will:
-1. Create an agent with the time tool
-2. Ask the time in different timezones
-3. Respond using the tool
+1. Create an agent with tools
+2. Ask questions and use the appropriate tools
+3. Respond with results
 
-Example interaction:
+Example interactions:
 ```
 User: What time is it?
-Agent: The current time in UTC is Thursday, February 5, 2026 at 8:51 AM. If you need the time in a different timezone, just let me know!
+Agent: The current time in UTC is Thursday, February 5, 2026 at 8:59 AM.
+
+User: Can you ping the private VM?
+Agent: I tried to ping the private VM, but it is not reachable (ping failed).
 
 User: What time is it in US/Eastern?
-Agent: The current time in US/Eastern is Thursday, February 5, 2026, at 3:51 AM (EST).
+Agent: The current time in US/Eastern is Thursday, February 5, 2026, at 3:59 AM EST.
 ```
 
 ## Code Structure (v2 API)
 
 ```python
-# 1. Define the tool
+# 1. Define tools
 @tool(approval_mode="never_require")
 def get_current_time(timezone_name: str = "UTC") -> str:
     # Tool implementation
     pass
 
-# 2. Create agent with tool using v2 API
+@tool(approval_mode="never_require")
+def ping_private_vm() -> str:
+    # Tool implementation
+    pass
+
+# 2. Create agent with tools using v2 API
 async with (
     AzureCliCredential() as credential,
     AzureAIProjectAgentProvider(
@@ -84,10 +86,10 @@ async with (
     ) as provider,
 ):
     agent = await provider.create_agent(
-        model="gpt-4.1",
+        model=model_deployment,
         name="TimeAgent",
         instructions="...",
-        tools=get_current_time,
+        tools=[get_current_time, ping_private_vm],
     )
     
     # 3. Run conversations using agent.run()
@@ -100,8 +102,8 @@ async with (
 
 ```python
 @tool(approval_mode="never_require")
-def get_timezone_info(timezone_name: str) -> str:
-    """Get information about a timezone."""
+def your_custom_tool(param: str) -> str:
+    """Your tool description."""
     # Implementation
     pass
 
