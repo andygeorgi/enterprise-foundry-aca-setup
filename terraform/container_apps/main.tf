@@ -151,8 +151,8 @@ data "azurerm_user_assigned_identity" "aca_ai_services" {
 
 # Lookup Document Intelligence service for RBAC
 data "azurerm_cognitive_account" "docintel" {
-  count               = var.docintel_endpoint != "" ? 1 : 0
-  name                = "docintel-foundry-sbx1"
+  count               = var.docintel_name != "" ? 1 : 0
+  name                = var.docintel_name
   resource_group_name = var.rg_app
 }
 
@@ -211,12 +211,12 @@ resource "azurerm_container_app" "file_upload" {
         value = "16777216"  # 16MB
       }
 
-      # Document Intelligence configuration (optional)
+      # Document Intelligence configuration (optional - endpoint looked up dynamically)
       dynamic "env" {
-        for_each = var.docintel_endpoint != "" ? [1] : []
+        for_each = var.docintel_name != "" ? [1] : []
         content {
           name  = "AZURE_DOCINTEL_ENDPOINT"
-          value = var.docintel_endpoint
+          value = data.azurerm_cognitive_account.docintel[0].endpoint
         }
       }
     }
@@ -225,7 +225,7 @@ resource "azurerm_container_app" "file_upload" {
 
 # RBAC: Grant system-assigned identity access to Document Intelligence
 resource "azurerm_role_assignment" "file_upload_docintel_user" {
-  count                = var.docintel_endpoint != "" ? 1 : 0
+  count                = var.docintel_name != "" ? 1 : 0
   scope                = data.azurerm_cognitive_account.docintel[0].id
   role_definition_name = "Cognitive Services User"
   principal_id         = azurerm_container_app.file_upload.identity[0].principal_id

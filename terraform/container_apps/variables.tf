@@ -69,9 +69,9 @@ variable "file_upload_image_tag" {
   default     = "latest"
 }
 
-variable "docintel_endpoint" {
+variable "docintel_name" {
   type        = string
-  description = "Azure Document Intelligence endpoint URL (optional)"
+  description = "Name of the Azure Document Intelligence service (optional - leave empty to disable)"
   default     = ""
 }
 
