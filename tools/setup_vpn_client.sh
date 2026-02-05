@@ -15,8 +15,8 @@ NC='\033[0m'
 # Configuration - can be overridden via environment variables
 CERT_DIR="${HOME}/vpn-certs"
 VPN_DIR="${HOME}/OpenVPN"
-RG_NAME="${RG_NAME:-rg-foundry-sbx-net}"
-VPN_GW_NAME="${VPN_GW_NAME:-vpngw-vnet-hub-weu}"
+RG_NAME="${RG_NAME:-rg-foundry-sbx-net1}"
+VPN_GW_NAME="${VPN_GW_NAME:-vpngw-vnet-hub-sbc}"
 
 echo -e "${GREEN}========================================${NC}"
 echo -e "${GREEN}Azure VPN Client Setup Script${NC}"
@@ -138,9 +138,9 @@ if [ ! -f "$VPN_DIR/vpnconfig.ovpn" ]; then
     echo "Downloading VPN client package..."
     curl -sL -o /tmp/VpnClient.zip "$url"
     
-    # Extract
+    # Extract (overwrite without prompting, ignore backslash warnings and exit codes)
     mkdir -p "$VPN_DIR"
-    unzip -q /tmp/VpnClient.zip -d "$VPN_DIR"
+    unzip -o /tmp/VpnClient.zip -d "$VPN_DIR" > /dev/null 2>&1 || true
     rm -f /tmp/VpnClient.zip
     
     echo -e "${GREEN}✓ VPN client configuration downloaded${NC}"

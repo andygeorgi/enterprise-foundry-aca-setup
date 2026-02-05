@@ -140,3 +140,5 @@ output "aca_acr_pull_identity_client_id" {
   description = "Client ID of the managed identity for ACA to pull from ACR"
   value       = azurerm_user_assigned_identity.aca_acr_pull.client_id
 }
+
+
