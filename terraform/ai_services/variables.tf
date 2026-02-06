@@ -71,7 +71,68 @@ variable "search_name" {
 variable "search_sku" {
   type        = string
   description = "Azure AI Search SKU (basic, standard, standard2, standard3)"
-  default     = "basic"  # For sandbox; use 'standard' for production
+  default     = "basic" # For sandbox; use 'standard' for production
+}
+
+# ======= Microsoft Foundry (AI Services) =======
+variable "foundry_name" {
+  type        = string
+  description = "Microsoft Foundry (AI Services) name (must be globally unique)"
+  default     = "foundry-sbx"
+}
+
+variable "foundry_sku" {
+  type        = string
+  description = "Microsoft Foundry SKU"
+  default     = "S0"
+}
+
+variable "embedding_model_name" {
+  type        = string
+  description = "Name for the text embedding deployment"
+  default     = "text-embedding-ada-002"
+}
+
+variable "embedding_model_version" {
+  type        = string
+  description = "Version of the text embedding model"
+  default     = "2"
+}
+
+variable "gpt4_model_name" {
+  type        = string
+  description = "Name for the GPT-4.1 deployment"
+  default     = "gpt-4.1"
+}
+
+variable "gpt4_model_version" {
+  type        = string
+  description = "Version of the GPT-4.1 model"
+  default     = "2025-04-14"
+}
+
+variable "deployment_capacity" {
+  type        = number
+  description = "Token capacity for model deployments (in thousands)"
+  default     = 10
+}
+
+variable "project_name" {
+  type        = string
+  description = "Name for the default Foundry project"
+  default     = "default-project"
+}
+
+variable "project_display_name" {
+  type        = string
+  description = "Display name for the default Foundry project"
+  default     = "Default Project"
+}
+
+variable "project_description" {
+  type        = string
+  description = "Description for the default Foundry project"
+  default     = "Default Foundry project for AI workloads"
 }
 
 # ======= Tags =======

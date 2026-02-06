@@ -3,6 +3,10 @@
 	"image": "mcr.microsoft.com/devcontainers/base:ubuntu",
 	
 	"features": {
+		"ghcr.io/devcontainers/features/python:1": {
+			"version": "3.12",
+			"installTools": true
+		},
 		"ghcr.io/devcontainers/features/terraform:1": {
 			"version": "latest",
 			"tflint": "latest",
@@ -28,7 +32,10 @@
 				"ms-azuretools.vscode-azureterraform",
 				"ms-vscode.azurecli",
 				"github.copilot",
-				"github.copilot-chat"
+				"github.copilot-chat",
+				"ms-python.python",
+				"ms-python.debugpy",
+				"ms-python.vscode-pylance"
 			],
 			"settings": {
 				"terraform.languageServer.enable": true,
@@ -38,7 +45,7 @@
 		}
 	},
 
-	"postCreateCommand": "terraform --version && az --version && sudo apt-get update && sudo apt-get install -y openvpn iputils-ping curl net-tools dnsutils socat lsof && echo '✓ Dev container ready with VPN support' && chmod +x /workspaces/enterprise-foundry-aca-setup/tools/*.sh && /workspaces/enterprise-foundry-aca-setup/tools/start_aca_proxy.sh",
+	"postCreateCommand": "terraform --version && az --version && python3 --version && pip3 install --user -r /workspaces/enterprise-foundry-aca-setup/src/agents/simple_time_agent/requirements.txt && sudo apt-get update && sudo apt-get install -y openvpn iputils-ping curl net-tools dnsutils socat lsof && echo '✓ Dev container ready with VPN support' && chmod +x /workspaces/enterprise-foundry-aca-setup/tools/*.sh && /workspaces/enterprise-foundry-aca-setup/tools/start_aca_proxy.sh",
 	
 	"forwardPorts": [8080],
 	
