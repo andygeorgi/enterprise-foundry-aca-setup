@@ -156,6 +156,13 @@ data "azurerm_cognitive_account" "foundry" {
   resource_group_name = var.rg_app
 }
 
+# Lookup Azure AI Foundry service for RBAC (optional)
+data "azurerm_cognitive_account" "foundry" {
+  count               = var.azure_ai_project_endpoint != "" ? 1 : 0
+  name                = "foundry-sbx"  # Must match foundry_name from ai_services module
+  resource_group_name = var.rg_app
+}
+
 # --- Container App: File Upload App ---
 
 resource "azurerm_container_app" "file_upload" {
