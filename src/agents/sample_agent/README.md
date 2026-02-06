@@ -100,6 +100,7 @@ Environment variables in the container:
 - `AZURE_AI_PROJECT_ENDPOINT` - AI project endpoint
 - `AZURE_AI_MODEL_DEPLOYMENT_NAME` - Model deployment name (gpt-4.1)
 - `AZURE_CLIENT_ID` - Managed identity client ID (for authentication)
+- `SHAREPOINT_PROJECT_CONNECTION_ID` - (Optional) SharePoint grounding connection ID
 
 ## Example Interactions
 
