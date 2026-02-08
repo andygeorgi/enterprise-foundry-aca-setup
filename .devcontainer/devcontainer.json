@@ -45,7 +45,7 @@
 		}
 	},
 
-	"postCreateCommand": "terraform --version && az --version && python3 --version && pip3 install --user -r /workspaces/enterprise-foundry-aca-setup/src/agents/simple_time_agent/requirements.txt && sudo apt-get update && sudo apt-get install -y openvpn iputils-ping curl net-tools dnsutils socat lsof && echo '✓ Dev container ready with VPN support' && chmod +x /workspaces/enterprise-foundry-aca-setup/tools/*.sh && /workspaces/enterprise-foundry-aca-setup/tools/start_aca_proxy.sh",
+	"postCreateCommand": "terraform --version && az --version && python3 --version && pip3 install --user debugpy -r /workspaces/enterprise-foundry-aca-setup/src/agents/sample_agent/requirements.txt -r /workspaces/enterprise-foundry-aca-setup/src/file-upload-app/requirements.txt && sudo apt-get update && sudo apt-get install -y openvpn iputils-ping curl net-tools dnsutils socat lsof && echo '✓ Dev container ready with VPN support' && chmod +x /workspaces/enterprise-foundry-aca-setup/tools/*.sh && /workspaces/enterprise-foundry-aca-setup/tools/start_aca_proxy.sh",
 	
 	"forwardPorts": [8080],
 	
