@@ -62,10 +62,15 @@ async def inspect_messages_middleware(context, next):
             file_descriptions = "\n".join(
                 f"- {fname}: {result}" for fname, result in found_files
             )
+            # Call parse_uploaded_file directly for each file
+            parse_results = "\n".join(
+                f"- {parse_uploaded_file(fname)}" for fname, _ in found_files
+            )
             replacement_text = (
                 f"{original_text}\n\n"
                 f"The user uploaded the following files:\n{file_descriptions}\n"
-                f"Files have been saved to the uploads directory."
+                f"Files have been saved to the uploads directory.\n\n"
+                f"Parse results:\n{parse_results}"
             ).strip()
             context.messages[i] = ChatMessage(
                 role=msg.role, text=replacement_text
@@ -203,9 +208,9 @@ async def create_agent():
     ):
         sharepoint_connection_id = os.getenv(
             "SHAREPOINT_PROJECT_CONNECTION_ID")
-        tools: list = [ping_private_vm, parse_uploaded_file]
+        tools: list = [ping_private_vm]
         instructions = """You are a helpful assistant.
-You can ping the private VM to test connectivity. Whenever the user uploads files, call parse_uploaded_file for each file. Be friendly and concise in your responses."""
+You can ping the private VM to test connectivity. Be friendly and concise in your responses."""
 
         if sharepoint_connection_id:
             tools.append(
