@@ -7,10 +7,12 @@ with code-based tools (network connectivity).
 import asyncio
 from typing import Annotated
 
-from agent_framework import tool, chat_middleware, ChatMessage
+from agent_framework import tool, chat_middleware, ChatMessage, Context, ContextProvider
 from agent_framework.azure import AzureAIProjectAgentProvider
 from azure.ai.agents.models import SharepointToolDefinition, SharepointGroundingToolParameters, ToolConnection
 from azure.identity.aio import DefaultAzureCredential
+from collections.abc import MutableSequence, Sequence
+from typing import Any
 from pydantic import Field
 from agent_framework.devui import serve
 import os
@@ -24,10 +26,63 @@ load_dotenv()
 UPLOADS_DIR = os.path.join(os.path.dirname(__file__), "uploads")
 os.makedirs(UPLOADS_DIR, exist_ok=True)
 
+# Context provider that lists uploaded files
+
+
+class UploadedFilesContextProvider(ContextProvider):
+    """Provides the agent with a list of files uploaded via the middleware."""
+
+    def __init__(self, uploads_dir: str = UPLOADS_DIR):
+        self._uploads_dir = uploads_dir
+
+    async def invoking(
+        self,
+        messages: ChatMessage | MutableSequence[ChatMessage],
+        **kwargs: Any,
+    ) -> Context:
+        """Inject the list of uploaded files as additional context before each agent call."""
+        files = sorted(os.listdir(self._uploads_dir))
+        # Only include actual files (skip directories)
+        files = [f for f in files if os.path.isfile(
+            os.path.join(self._uploads_dir, f))]
+
+        if files:
+            file_list = "\n".join(f"- {f}" for f in files)
+            instructions = (
+                f"The following {len(files)} file(s) have been uploaded and are available "
+                f"in the uploads directory:\n{file_list}\n"
+                "You can reference these files when answering user questions."
+            )
+        else:
+            instructions = "No files have been uploaded yet."
+
+        return Context(instructions=instructions)
+
+    async def invoked(
+        self,
+        request_messages: ChatMessage | Sequence[ChatMessage],
+        response_messages: ChatMessage | Sequence[ChatMessage] | None = None,
+        invoke_exception: Exception | None = None,
+        **kwargs: Any,
+    ) -> None:
+        """No-op after agent call — file tracking is handled by the middleware."""
+        pass
+
+    def serialize(self) -> str:
+        """Serialize the current list of uploaded files."""
+        files = sorted(os.listdir(self._uploads_dir))
+        files = [f for f in files if os.path.isfile(
+            os.path.join(self._uploads_dir, f))]
+        return "\n".join(files)
+
 
 # Middleware to inspect all chat messages sent to the AI model
+
+
 @chat_middleware
 async def inspect_messages_middleware(context, next):
+    # Disable server-side response storage to avoid issues with tool call continuations
+    context.options["store"] = False
     """Log all chat messages before and after the AI call."""
     print(f"\n{'='*60}")
     print(
@@ -228,6 +283,9 @@ You can ping the private VM to test connectivity. Be friendly and concise in you
             instructions = """You are a helpful assistant.
 You can ping the private VM to test connectivity. Whenever the user uploads files, call parse_uploaded_file for each file. Whenever the user mentions travel questions, call the sharepoint_grounding_preview tool to retrieve relevant information from the connected SharePoint sites. Be friendly and concise in your responses."""
 
+        # Create context provider for uploaded files
+        uploaded_files_context = UploadedFilesContextProvider(UPLOADS_DIR)
+
         # Create an agent with the tools
         print(f"Creating agent (model: {model_deployment})...")
         agent = await provider.create_agent(
@@ -236,6 +294,7 @@ You can ping the private VM to test connectivity. Whenever the user uploads file
             instructions=instructions,
             tools=tools,
             middleware=[inspect_messages_middleware],
+            context_provider=uploaded_files_context,
         )
         print(f"✓ Agent created: {agent.id}\n")
         return agent

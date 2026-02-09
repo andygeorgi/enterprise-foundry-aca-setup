@@ -43,7 +43,7 @@ AZURE_DOCINTEL_ENDPOINT=$DOCINTEL_ENDPOINT
 # Upload Configuration (optional)
 UPLOAD_FOLDER=./uploads
 MAX_CONTENT_LENGTH=16777216
-PORT=8080
+HEALTH_PORT=8081
 
 # Note: AZURE_CLIENT_ID is not needed when using DefaultAzureCredential locally
 # It will use your Azure CLI credentials
