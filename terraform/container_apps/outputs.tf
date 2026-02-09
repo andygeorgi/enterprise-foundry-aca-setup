@@ -27,21 +27,11 @@ output "file_upload_app" {
   }
 }
 
-output "sample_agent_app" {
-  description = "Sample agent container app details"
-  value = {
-    name         = azurerm_container_app.sample_agent.name
-    fqdn         = azurerm_container_app.sample_agent.ingress[0].fqdn
-    url          = "https://${azurerm_container_app.sample_agent.ingress[0].fqdn}"
-    image        = "${data.azurerm_container_registry.acr.login_server}/${var.sample_agent_image_name}:${var.sample_agent_image_tag}"
-  }
-}
-
 output "logs_commands" {
   description = "Commands to stream container app logs"
   value = {
     onprem_test     = "az containerapp logs show -g ${var.rg_app} -n ${azurerm_container_app.onprem_test.name} --follow"
     pe_storage_test = "az containerapp logs show -g ${var.rg_app} -n ${azurerm_container_app.pe_storage_test.name} --follow"
-    sample_agent    = "az containerapp logs show -g ${var.rg_app} -n ${azurerm_container_app.sample_agent.name} --follow"
+    file_upload     = "az containerapp logs show -g ${var.rg_app} -n ${azurerm_container_app.file_upload.name} --follow"
   }
 }

@@ -32,14 +32,14 @@ file_upload_image_name   = "file-upload-app"
 file_upload_image_tag    = "latest"
 
 # ======= Document Intelligence (optional - leave empty until ai_services module deployed) =======
-# After deploying ai_services module, get the endpoint with:
+# After deploying ai_services module, get the name with:
 #   cd ../ai_services
-#   terraform output docintel_endpoint
-docintel_endpoint = ""  # Example: "https://docintel-foundry-sbx.cognitiveservices.azure.com/"
+#   terraform output docintel_name
+docintel_name = ""  # Example: "docintel-foundry-sbx"
 
-# ======= Sample Agent Configuration =======
-app_sample_agent_name          = "aca-sample-agent"
-sample_agent_image_name        = "sample-agent"
-sample_agent_image_tag         = "latest"
-azure_ai_project_endpoint      = ""  # Example: "https://foundry-sbx.services.ai.azure.com/api/projects/default-project"
+# ======= Azure AI Foundry (optional - leave empty to disable) =======
+# The project endpoint is constructed automatically:
+#   https://<foundry_name>.cognitiveservices.azure.com/api/projects/<foundry_project_name>
+foundry_name                   = ""         # Example: "foundry-sbx"
+foundry_project_name           = ""         # Example: "default-project"
 azure_ai_model_deployment_name = "gpt-4.1"

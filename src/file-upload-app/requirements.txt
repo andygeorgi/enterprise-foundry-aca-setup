@@ -5,4 +5,4 @@ azure-identity==1.18.0
 requests==2.32.3
 python-dotenv==1.0.1
 streamlit>=1.41.0
-agent-framework==1.0.0b260130
+agent-framework-azure-ai==1.0.0b260130
