@@ -435,6 +435,15 @@ resource "azurerm_private_dns_zone_virtual_network_link" "blob_to_sbx" {
   registration_enabled  = false
 }
 
+# Link to Hub VNet for DNS resolution via VPN/ExpressRoute
+resource "azurerm_private_dns_zone_virtual_network_link" "blob_to_hub" {
+  name                  = "pdz-blob-link-hub"
+  resource_group_name   = azurerm_resource_group.net.name
+  private_dns_zone_name = azurerm_private_dns_zone.blob.name
+  virtual_network_id    = local.hub_vnet_id
+  registration_enabled  = false
+}
+
 ################################################################################
 # Storage Account
 ################################################################################
@@ -549,6 +558,15 @@ resource "azurerm_private_dns_zone_virtual_network_link" "acr_to_sbx" {
   resource_group_name   = azurerm_resource_group.net.name
   private_dns_zone_name = azurerm_private_dns_zone.acr.name
   virtual_network_id    = azurerm_virtual_network.sbx.id
+  registration_enabled  = false
+}
+
+# Link to Hub VNet for DNS resolution via VPN/ExpressRoute
+resource "azurerm_private_dns_zone_virtual_network_link" "acr_to_hub" {
+  name                  = "pdz-acr-link-hub"
+  resource_group_name   = azurerm_resource_group.net.name
+  private_dns_zone_name = azurerm_private_dns_zone.acr.name
+  virtual_network_id    = local.hub_vnet_id
   registration_enabled  = false
 }
 
