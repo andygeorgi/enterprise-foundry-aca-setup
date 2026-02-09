@@ -11,18 +11,22 @@ GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
 NC='\033[0m' # No Color
 
-# Configuration - update these based on your terraform.tfvars
-ACR_NAME="${ACR_NAME:-foundrysbxacr1}"
+# Configuration - load from .env if available, allow env var overrides
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+if [ -f "$SCRIPT_DIR/.env" ]; then
+    set -a
+    source "$SCRIPT_DIR/.env"
+    set +a
+fi
+
+ACR_NAME="${ACR_NAME:?Error: ACR_NAME not set. Run ./generate-env.sh first.}"
 IMAGE_NAME="${IMAGE_NAME:-file-upload-app}"
 IMAGE_TAG="${IMAGE_TAG:-latest}"
-RESOURCE_GROUP="${RESOURCE_GROUP:-rg-foundry-sbx-app1}"
+RESOURCE_GROUP="${RESOURCE_GROUP:?Error: RESOURCE_GROUP not set. Run ./generate-env.sh first.}"
 
 echo -e "${GREEN}================================${NC}"
 echo -e "${GREEN}Building and Pushing Container Image${NC}"
 echo -e "${GREEN}================================${NC}"
-
-# Get script directory
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 # Get ACR login server
 ACR_LOGIN_SERVER=$(az acr show --name "$ACR_NAME" --resource-group "$RESOURCE_GROUP" --query loginServer -o tsv)

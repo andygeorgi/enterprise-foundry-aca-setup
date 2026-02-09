@@ -14,7 +14,11 @@ COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
 # Copy application code
-COPY app.py .
+COPY app.py upload_backend.py ./
+
+# Copy templates and static assets (still used by the Flask backend viewer)
+COPY templates/ ./templates/
+COPY static/ ./static/
 
 # Create upload directory
 RUN mkdir -p /app/uploads && chmod 777 /app/uploads
@@ -26,12 +30,12 @@ RUN useradd -m -u 1000 appuser && \
 # Switch to non-root user
 USER appuser
 
-# Expose port 8080
-EXPOSE 8080
+# Expose Streamlit (8080) and Flask health-check (8081)
+EXPOSE 8080 8081
 
-# Health check (container listens on 8080)
-HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
-    CMD python -c "import urllib.request; urllib.request.urlopen('http://localhost:8080/health')" || exit 1
+# Health check against the Flask sidecar on port 8081
+HEALTHCHECK --interval=30s --timeout=3s --start-period=10s --retries=3 \
+    CMD python -c "import urllib.request; urllib.request.urlopen('http://localhost:8081/health')" || exit 1
 
-# Run the application
-CMD ["python", "app.py"]
+# Run the Streamlit app
+CMD ["streamlit", "run", "app.py", "--server.port=8080", "--server.address=0.0.0.0", "--server.headless=true", "--browser.gatherUsageStats=false"]

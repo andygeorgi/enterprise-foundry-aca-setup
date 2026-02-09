@@ -75,27 +75,9 @@ variable "docintel_name" {
   default     = ""
 }
 
-variable "app_sample_agent_name" {
+variable "foundry_project_name" {
   type        = string
-  description = "Name of the sample agent container app"
-  default     = "aca-sample-agent"
-}
-
-variable "sample_agent_image_name" {
-  type        = string
-  description = "Name of the sample agent container image in ACR"
-  default     = "sample-agent"
-}
-
-variable "sample_agent_image_tag" {
-  type        = string
-  description = "Tag of the sample agent container image"
-  default     = "latest"
-}
-
-variable "azure_ai_project_endpoint" {
-  type        = string
-  description = "Azure AI Project endpoint URL for the agent"
+  description = "Name of the Azure AI Foundry project (optional - leave empty to disable)"
   default     = ""
 }
 
@@ -103,4 +85,10 @@ variable "azure_ai_model_deployment_name" {
   type        = string
   description = "Azure AI model deployment name (e.g., gpt-4.1)"
   default     = "gpt-4.1"
+}
+
+variable "foundry_name" {
+  type        = string
+  description = "Name of the Azure AI Foundry cognitive account (optional - leave empty to disable)"
+  default     = ""
 }

@@ -1,0 +1,157 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Document Analysis - {{ filename }}</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/viewer.css') }}">
+</head>
+<body>
+    <div class="container">
+        <a href="/" class="back-link">← Back to Upload</a>
+
+        <div class="header">
+            <h1>📊 Document Analysis</h1>
+            <div class="filename">{{ filename }}</div>
+        </div>
+
+        <div class="tabs">
+            <button class="tab active" onclick="showTab('summary')">📈 Summary</button>
+            <button class="tab" onclick="showTab('content')">📄 Content</button>
+            <button class="tab" onclick="showTab('tables')">📋 Tables</button>
+            <button class="tab" onclick="showTab('kvpairs')">🔑 Key-Value Pairs</button>
+            <button class="tab" onclick="showTab('pages')">📑 Pages</button>
+            <button class="tab" onclick="showTab('json')">💾 Raw JSON</button>
+        </div>
+
+        <!-- Summary Tab -->
+        <div id="summary" class="tab-content active">
+            <div class="summary-grid">
+                <div class="summary-card">
+                    <h3>Status</h3>
+                    <div class="value">{{ '✅ Processed' if analysis.processed else '❌ Failed' }}</div>
+                </div>
+                {% if analysis.processed %}
+                <div class="summary-card">
+                    <h3>Pages</h3>
+                    <div class="value">{{ analysis.pages|length }}</div>
+                </div>
+                <div class="summary-card">
+                    <h3>Tables</h3>
+                    <div class="value">{{ analysis.tables|length }}</div>
+                </div>
+                <div class="summary-card">
+                    <h3>Key-Value Pairs</h3>
+                    <div class="value">{{ analysis.key_value_pairs|length }}</div>
+                </div>
+                <div class="summary-card">
+                    <h3>Paragraphs</h3>
+                    <div class="value">{{ analysis.paragraphs|length }}</div>
+                </div>
+                <div class="summary-card">
+                    <h3>Model</h3>
+                    <div class="value" style="font-size: 1.2em;">{{ analysis.model_id }}</div>
+                </div>
+                {% endif %}
+            </div>
+
+            {% if not analysis.processed %}
+            <div class="content-section">
+                <h2>❌ Error</h2>
+                <p style="color: #f48771;">{{ analysis.error }}</p>
+            </div>
+            {% endif %}
+        </div>
+
+        <!-- Content Tab -->
+        <div id="content" class="tab-content">
+            {% if analysis.processed and analysis.content %}
+            <div class="content-section">
+                <h2>📄 Extracted Text</h2>
+                <div class="text-content">{{ analysis.content }}</div>
+            </div>
+            {% else %}
+            <p>No content extracted.</p>
+            {% endif %}
+        </div>
+
+        <!-- Tables Tab -->
+        <div id="tables" class="tab-content">
+            {% if analysis.processed and analysis.tables %}
+                {% for table in analysis.tables %}
+                <div class="content-section">
+                    <h2>Table {{ loop.index }} ({{ table.row_count }} rows × {{ table.column_count }} columns)</h2>
+                    <div class="table-container">
+                        <table>
+                            {% for row in range(table.row_count) %}
+                            <tr>
+                                {% for col in range(table.column_count) %}
+                                    {% set cell = table.cells|selectattr('row_index', 'equalto', row)|selectattr('column_index', 'equalto', col)|first %}
+                                    {% if cell %}
+                                        <{{ 'th' if row == 0 else 'td' }}>{{ cell.content }}</{{ 'th' if row == 0 else 'td' }}>
+                                    {% else %}
+                                        <{{ 'th' if row == 0 else 'td' }}></{{ 'th' if row == 0 else 'td' }}>
+                                    {% endif %}
+                                {% endfor %}
+                            </tr>
+                            {% endfor %}
+                        </table>
+                    </div>
+                </div>
+                {% endfor %}
+            {% else %}
+            <p>No tables found in the document.</p>
+            {% endif %}
+        </div>
+
+        <!-- Key-Value Pairs Tab -->
+        <div id="kvpairs" class="tab-content">
+            {% if analysis.processed and analysis.key_value_pairs %}
+                <div class="content-section">
+                    <h2>🔑 Extracted Key-Value Pairs</h2>
+                    {% for kv in analysis.key_value_pairs %}
+                    <div class="kv-pair">
+                        <div class="kv-key">{{ kv.key or '(no key)' }}<span class="confidence">(confidence: {{ "%.1f"|format(kv.confidence * 100) }}%)</span></div>
+                        <div class="kv-value">{{ kv.value or '(no value)' }}</div>
+                    </div>
+                    {% endfor %}
+                </div>
+            {% else %}
+            <p>No key-value pairs found in the document.</p>
+            {% endif %}
+        </div>
+
+        <!-- Pages Tab -->
+        <div id="pages" class="tab-content">
+            {% if analysis.processed and analysis.pages %}
+                {% for page in analysis.pages %}
+                <div class="content-section">
+                    <div class="page-info">
+                        <span class="page-number">Page {{ page.page_number }}</span>
+                        <span class="confidence">{{ page.width }} × {{ page.height }} {{ page.unit }}</span>
+                        <span class="confidence">{{ page.lines_count }} lines, {{ page.words_count }} words</span>
+                    </div>
+                    {% if page.lines %}
+                        {% for line in page.lines %}
+                        <div class="line">{{ line.content }}</div>
+                        {% endfor %}
+                    {% endif %}
+                </div>
+                {% endfor %}
+            {% else %}
+            <p>No page information available.</p>
+            {% endif %}
+        </div>
+
+        <!-- Raw JSON Tab -->
+        <div id="json" class="tab-content">
+            <div class="content-section">
+                <h2>💾 Raw JSON Data</h2>
+                <pre id="jsonContent">{{ json_data }}</pre>
+            </div>
+        </div>
+    </div>
+
+    <script src="{{ url_for('static', filename='js/viewer.js') }}"></script>
+</body>
+</html>

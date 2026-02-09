@@ -1,5 +1,0 @@
-agent-framework[azure]
-azure-identity
-pydantic
-python-dotenv
-pytz

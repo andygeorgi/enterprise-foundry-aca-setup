@@ -1,0 +1,49 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>File Upload - Enterprise Foundry</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+</head>
+<body>
+    <div class="container">
+        <h1>📁 File Upload with AI Analysis</h1>
+        <p class="subtitle">Enterprise Foundry - Powered by Azure Document Intelligence</p>
+
+        <div class="upload-area" id="uploadArea">
+            <div class="upload-icon">☁️</div>
+            <div class="upload-text">Click to browse or drag and drop files here</div>
+            <div class="upload-hint">Supports: PDF, images (analyzed with AI), and other documents (max 16MB per file)</div>
+        </div>
+
+        <input type="file" id="fileInput" multiple>
+
+        <div class="file-list" id="fileList"></div>
+
+        <button class="upload-btn" id="uploadBtn" onclick="uploadFiles()" disabled>
+            Upload Files
+        </button>
+
+        <div id="message"></div>
+
+        <div class="stats">
+            <div class="stat-item">
+                <span class="stat-value" id="fileCount">0</span>
+                <span class="stat-label">Files Selected</span>
+            </div>
+            <div class="stat-item">
+                <span class="stat-value" id="totalSize">0 KB</span>
+                <span class="stat-label">Total Size</span>
+            </div>
+        </div>
+
+        <div class="recent-files" id="recentFiles" style="display: none;">
+            <h2>📋 Recent Analyses</h2>
+            <div id="recentFilesList"></div>
+        </div>
+    </div>
+
+    <script src="{{ url_for('static', filename='js/upload.js') }}"></script>
+</body>
+</html>
