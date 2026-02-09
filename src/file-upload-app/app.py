@@ -28,6 +28,13 @@ from upload_backend import (
     save_uploaded_bytes,
 )
 
+# -- Agent workflow imports --------------------------------------------------
+from agent_workflow import (
+    format_analysis_for_agent,
+    is_agent_available,
+    run_document_analysis,
+)
+
 # ---------------------------------------------------------------------------
 # Page configuration
 # ---------------------------------------------------------------------------
@@ -86,14 +93,20 @@ if "chat_messages" not in st.session_state:
             "role": "assistant",
             "content": (
                 "👋 Hello! I'm the **Enterprise Foundry Agent**.\n\n"
-                "I can help you with document analysis, data extraction, and more. "
-                "This chat will soon support multi-agent workflows.\n\n"
-                "For now, feel free to type a message and I'll echo it back."
+                "I can help you with document analysis using a multi-agent workflow:\n"
+                "1. **DocumentAnalyst** — extracts key fields and creates a structured table\n"
+                "2. **Summarizer** — provides a brief description of the findings\n\n"
+                "Upload a document on the left, then click **🤖 Analyse with Agent** "
+                "or ask me a question about your documents."
             ),
         }
     ]
 if "upload_results" not in st.session_state:
     st.session_state.upload_results = []
+if "last_analysis_content" not in st.session_state:
+    st.session_state.last_analysis_content = None
+if "selected_existing_files" not in st.session_state:
+    st.session_state.selected_existing_files = []
 
 # ---------------------------------------------------------------------------
 # Custom CSS
@@ -216,6 +229,17 @@ with col_upload:
 
             st.session_state.upload_results = results
             if results:
+                # Collect document content for agent workflow
+                all_content = []
+                for r in results:
+                    if r.get("json_file"):
+                        analysis = load_analysis(r["json_file"])
+                        if analysis:
+                            all_content.append(
+                                format_analysis_for_agent(analysis))
+                if all_content:
+                    st.session_state.last_analysis_content = "\n\n---\n\n".join(
+                        all_content)
                 st.success(f"✅ {len(results)} file(s) uploaded and analysed.")
 
     # -- Show most recent upload results ------------------------------------
@@ -272,10 +296,101 @@ with col_upload:
 # ===========================  RIGHT COLUMN – CHAT  =========================
 with col_chat:
     st.subheader("💬 Agent Chat")
-    st.caption("Multi-agent interaction · coming soon")
+
+    # Agent status indicator
+    if is_agent_available():
+        st.caption("🟢 Agent workflow active — DocumentAnalyst → Summarizer")
+    else:
+        st.caption(
+            "⚪ Agent not configured — using echo mode  ·  "
+            "Set `AZURE_OPENAI_ENDPOINT` in .env"
+        )
+
+    # -- File context selector (existing + new uploads) ---------------------
+    existing_files = list_uploaded_files()
+    analysed_files = [
+        f for f in existing_files if f["has_analysis"] and f["json_file"]
+    ]
+
+    if analysed_files:
+        file_options = [f["filename"] for f in analysed_files]
+        selected = st.multiselect(
+            "📎 Attach existing files to chat",
+            options=file_options,
+            default=st.session_state.selected_existing_files,
+            placeholder="Select previously uploaded files…",
+            help="Pick one or more analysed files to include as context for the agent.",
+        )
+        st.session_state.selected_existing_files = selected
+    else:
+        selected = []
+
+    # -- Build combined analysis content from all sources -------------------
+    def _gather_analysis_content() -> str | None:
+        """Merge content from selected existing files + newly uploaded files."""
+        parts: list[str] = []
+
+        # 1) Selected existing files
+        for fname in st.session_state.selected_existing_files:
+            json_name = fname + ".analysis.json"
+            analysis = load_analysis(json_name)
+            if analysis:
+                parts.append(
+                    f"### File: {fname}\n" +
+                    format_analysis_for_agent(analysis)
+                )
+
+        # 2) Newly uploaded files (from last Upload & Analyse action)
+        if st.session_state.get("last_analysis_content"):
+            parts.append(str(st.session_state.last_analysis_content))
+
+        return "\n\n---\n\n".join(parts) if parts else None
+
+    combined_content = _gather_analysis_content()
+
+    # Show attached-file summary
+    n_selected = len(st.session_state.selected_existing_files)
+    n_new = len(st.session_state.upload_results)
+    if n_selected or n_new:
+        badges = []
+        if n_selected:
+            badges.append(f"📎 {n_selected} existing")
+        if n_new:
+            badges.append(f"⬆️ {n_new} new")
+        st.info(f"Context: {' + '.join(badges)} file(s) attached")
+
+    # -- Quick-action: run agent on attached files --------------------------
+    if is_agent_available() and combined_content:
+        if st.button(
+            "🤖 Analyse attached files with Agent",
+            use_container_width=True,
+        ):
+            with st.spinner(
+                "Running agent workflow (DocumentAnalyst → Summarizer)…"
+            ):
+                result = run_document_analysis(combined_content)
+            if result["success"]:
+                parts = []
+                if result["analyst"]:
+                    parts.append(
+                        f"**📊 DocumentAnalyst:**\n\n{result['analyst']}"
+                    )
+                if result["summarizer"]:
+                    parts.append(
+                        f"**📝 Summarizer:**\n\n{result['summarizer']}"
+                    )
+                reply = (
+                    "\n\n---\n\n".join(parts) or "No analysis produced."
+                )
+                st.session_state.chat_messages.append(
+                    {"role": "assistant", "content": reply}
+                )
+                st.rerun()
+            else:
+                st.error(f"Agent error: {result.get('error', 'Unknown')}")
 
     # -- Chat history -------------------------------------------------------
-    chat_container = st.container(height=520)
+    chat_container = st.container(height=400)
     with chat_container:
         for msg in st.session_state.chat_messages:
             with st.chat_message(msg["role"]):
@@ -287,12 +402,37 @@ with col_chat:
     if user_input:
         # Store user message
         st.session_state.chat_messages.append(
-            {"role": "user", "content": user_input})
+            {"role": "user", "content": user_input}
+        )
 
-        # ---- Dummy agent response (placeholder for multi-agent workflow) ---
-        dummy_reply = _generate_dummy_response(user_input)
+        # Use agent workflow when available + files attached
+        if is_agent_available() and combined_content:
+            augmented = f"{combined_content}\n\n---\nUser question: {user_input}"
+            with st.spinner("🤖 Agent is thinking…"):
+                result = run_document_analysis(augmented)
+            if result["success"]:
+                parts = []
+                if result["analyst"]:
+                    parts.append(
+                        f"**📊 DocumentAnalyst:**\n\n{result['analyst']}"
+                    )
+                if result["summarizer"]:
+                    parts.append(
+                        f"**📝 Summarizer:**\n\n{result['summarizer']}"
+                    )
+                reply = (
+                    "\n\n---\n\n".join(parts)
+                    or "No analysis produced."
+                )
+            else:
+                reply = f"❌ Agent error: {result.get('error', 'Unknown')}"
+        else:
+            # Fallback: dummy echo when agent is not configured
+            reply = _generate_dummy_response(user_input)
+
         st.session_state.chat_messages.append(
-            {"role": "assistant", "content": dummy_reply})
+            {"role": "assistant", "content": reply}
+        )
 
         # Rerun to render the new messages
         st.rerun()
