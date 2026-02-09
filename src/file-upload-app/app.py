@@ -4,7 +4,7 @@ File Upload App – Streamlit front-end
 ======================================
 Two-column layout:
   • LEFT  – File upload with Azure Document Intelligence analysis
-  • RIGHT – Chat interface (dummy for now – will support multi-agent interaction)
+  • RIGHT – Chat interface with multi-agent orchestrator
 
 All heavy lifting (Azure Doc Intelligence, file persistence) is delegated to
 ``upload_backend.py``.
@@ -139,45 +139,28 @@ st.markdown(
 )
 
 # ---------------------------------------------------------------------------
-# Dummy agent helpers (to be replaced with real multi-agent orchestrator)
+# Agent response helpers
 # ---------------------------------------------------------------------------
 
 
-def _generate_dummy_response(user_message: str) -> str:
-    """
-    Placeholder response generator.
-    Replace this with a real multi-agent orchestration call.
-    """
-    lower = user_message.lower()
+def _format_agent_reply(result: dict) -> str:
+    """Format the orchestrator result dict into a chat-friendly Markdown reply."""
+    parts: list[str] = []
 
-    if any(w in lower for w in ("hello", "hi", "hey", "greetings")):
-        return "👋 Hi there! How can I help you today?"
+    if result.get("analyst"):
+        parts.append(f"**📊 DocumentAnalyst:**\n\n{result['analyst']}")
+    if result.get("summarizer"):
+        parts.append(f"**💬 GeneralAssistant:**\n\n{result['summarizer']}")
 
-    if "file" in lower or "upload" in lower or "document" in lower:
-        n = len(list_uploaded_files())
-        return (
-            f"📂 You currently have **{n}** file(s) uploaded.\n\n"
-            "Use the panel on the left to upload and analyse new documents. "
-            "Once multi-agent support lands, I'll be able to run deeper analysis pipelines for you."
-        )
+    # If neither specialist field is populated, use raw messages
+    if not parts and result.get("messages"):
+        for msg in result["messages"]:
+            text = msg.get("text", "")
+            author = msg.get("author", "Agent")
+            if text:
+                parts.append(f"**🤖 {author}:**\n\n{text}")
 
-    if "help" in lower:
-        return (
-            "🛠️ Here's what I can help with (soon):\n"
-            "- **Document analysis** – extract text, tables, key-value pairs\n"
-            "- **Multi-agent workflows** – orchestrate specialised agents\n"
-            "- **Data queries** – ask questions about uploaded documents\n\n"
-            "For now, upload files on the left and I'll echo your messages here."
-        )
-
-    if "status" in lower or "health" in lower:
-        return "✅ All systems operational. The upload backend is running."
-
-    # Default echo
-    return (
-        f"🤖 *Echo:* {user_message}\n\n"
-        "_(This is a placeholder response. Multi-agent interaction will be wired in soon.)_"
-    )
+    return "\n\n---\n\n".join(parts) if parts else "No analysis produced."
 
 
 # ---------------------------------------------------------------------------
@@ -185,7 +168,7 @@ def _generate_dummy_response(user_message: str) -> str:
 # ---------------------------------------------------------------------------
 st.markdown("## 🏗️ Enterprise Foundry — File Upload & Agent Chat")
 st.caption(
-    "Upload documents for AI analysis  ·  Chat with agents (multi-agent support coming soon)")
+    "Upload documents for AI analysis  ·  Chat with the multi-agent orchestrator")
 st.divider()
 
 # ---------------------------------------------------------------------------
@@ -299,11 +282,12 @@ with col_chat:
 
     # Agent status indicator
     if is_agent_available():
-        st.caption("🟢 Agent workflow active — DocumentAnalyst → Summarizer")
+        st.caption(
+            "🟢 Agent orchestrator active — routes to DocumentAnalyst / GeneralAssistant")
     else:
         st.caption(
             "⚪ Agent not configured — using echo mode  ·  "
-            "Set `AZURE_OPENAI_ENDPOINT` in .env"
+            "Set `AZURE_AI_PROJECT_ENDPOINT` in .env"
         )
 
     # -- File context selector (existing + new uploads) ---------------------
@@ -366,22 +350,11 @@ with col_chat:
             use_container_width=True,
         ):
             with st.spinner(
-                "Running agent workflow (DocumentAnalyst → Summarizer)…"
+                "Running agent orchestrator…"
             ):
                 result = run_document_analysis(combined_content)
             if result["success"]:
-                parts = []
-                if result["analyst"]:
-                    parts.append(
-                        f"**📊 DocumentAnalyst:**\n\n{result['analyst']}"
-                    )
-                if result["summarizer"]:
-                    parts.append(
-                        f"**📝 Summarizer:**\n\n{result['summarizer']}"
-                    )
-                reply = (
-                    "\n\n---\n\n".join(parts) or "No analysis produced."
-                )
+                reply = _format_agent_reply(result)
                 st.session_state.chat_messages.append(
                     {"role": "assistant", "content": reply}
                 )
@@ -411,24 +384,24 @@ with col_chat:
             with st.spinner("🤖 Agent is thinking…"):
                 result = run_document_analysis(augmented)
             if result["success"]:
-                parts = []
-                if result["analyst"]:
-                    parts.append(
-                        f"**📊 DocumentAnalyst:**\n\n{result['analyst']}"
-                    )
-                if result["summarizer"]:
-                    parts.append(
-                        f"**📝 Summarizer:**\n\n{result['summarizer']}"
-                    )
-                reply = (
-                    "\n\n---\n\n".join(parts)
-                    or "No analysis produced."
-                )
+                reply = _format_agent_reply(result)
+            else:
+                reply = f"❌ Agent error: {result.get('error', 'Unknown')}"
+        elif is_agent_available():
+            # No documents attached but agent is available — general question
+            with st.spinner("🤖 Agent is thinking…"):
+                result = run_document_analysis(user_input)
+            if result["success"]:
+                reply = _format_agent_reply(result)
             else:
                 reply = f"❌ Agent error: {result.get('error', 'Unknown')}"
         else:
-            # Fallback: dummy echo when agent is not configured
-            reply = _generate_dummy_response(user_input)
+            # Agent not configured – inform the user
+            reply = (
+                "⚠️ The agent orchestrator is not configured.\n\n"
+                "Set `AZURE_AI_PROJECT_ENDPOINT` and `AZURE_AI_MODEL_DEPLOYMENT_NAME` "
+                "in your `.env` file to enable the multi-agent workflow."
+            )
 
         st.session_state.chat_messages.append(
             {"role": "assistant", "content": reply}
