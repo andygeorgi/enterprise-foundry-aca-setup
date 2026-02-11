@@ -42,8 +42,8 @@ fi
 ACR_NAME=""
 RESOURCE_GROUP=""
 if [ -f "$TERRAFORM_APPS_DIR/terraform.tfvars" ]; then
-    ACR_NAME=$(grep -E '^acr_name\s*=' "$TERRAFORM_APPS_DIR/terraform.tfvars" | sed 's/.*=\s*"\(.*\)"/\1/' || echo "")
-    RESOURCE_GROUP=$(grep -E '^rg_app\s*=' "$TERRAFORM_APPS_DIR/terraform.tfvars" | sed 's/.*=\s*"\(.*\)"/\1/' || echo "")
+    ACR_NAME=$(grep -E '^acr_name\s*=' "$TERRAFORM_APPS_DIR/terraform.tfvars" | sed 's/.*=\s*"\(.*\)"/\1/' | tr -d '\r' || echo "")
+    RESOURCE_GROUP=$(grep -E '^rg_app\s*=' "$TERRAFORM_APPS_DIR/terraform.tfvars" | sed 's/.*=\s*"\(.*\)"/\1/' | tr -d '\r' || echo "")
 else
     echo "Warning: container_apps/terraform.tfvars not found, ACR_NAME and RESOURCE_GROUP will be empty"
 fi

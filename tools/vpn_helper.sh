@@ -12,9 +12,16 @@ YELLOW='\033[1;33m'
 RED='\033[0;31m'
 NC='\033[0m'
 
-# Configuration - can be overridden via environment variables
-RG_NAME="${RG_NAME:-rg-foundry-sbx-net}"
-VPN_GW_NAME="${VPN_GW_NAME:-vpngw-vnet-hub-weu}"
+# Configuration - load from .env if available, allow env var overrides
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+if [ -f "$SCRIPT_DIR/.env" ]; then
+    set -a
+    source "$SCRIPT_DIR/.env"
+    set +a
+fi
+
+RG_NAME="${RG_NAME:-${RG_NET:?Error: RG_NET not set. Run ./tools/generate-env.sh first.}}"
+VPN_GW_NAME="${VPN_GW_NAME:?Error: VPN_GW_NAME not set. Run ./tools/generate-env.sh first.}"
 
 show_menu() {
     echo -e "${GREEN}================================${NC}"
