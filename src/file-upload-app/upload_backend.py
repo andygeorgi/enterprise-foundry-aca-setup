@@ -13,7 +13,7 @@ from datetime import datetime
 from pathlib import Path
 from werkzeug.utils import secure_filename
 from azure.ai.formrecognizer import DocumentAnalysisClient
-from azure.identity import DefaultAzureCredential, ManagedIdentityCredential
+from azure.identity import DefaultAzureCredential
 from dotenv import load_dotenv
 
 # Load .env from the same directory as this file (src/file-upload-app/.env)
@@ -32,7 +32,6 @@ ALLOWED_EXTENSIONS = {
 }
 
 DOCINTEL_ENDPOINT = os.environ.get("AZURE_DOCINTEL_ENDPOINT", "")
-CLIENT_ID = os.environ.get("AZURE_CLIENT_ID", "")
 
 # ---------------------------------------------------------------------------
 # Azure Document Intelligence client (singleton)
@@ -51,19 +50,17 @@ def _init_docintel_client():
         return
 
     try:
-        if CLIENT_ID:
-            credential = ManagedIdentityCredential(client_id=CLIENT_ID)
-            document_analysis_client = DocumentAnalysisClient(
-                endpoint=DOCINTEL_ENDPOINT, credential=credential
-            )
-            print(
-                f"✓ Document Intelligence client initialised with managed identity (client_id: {CLIENT_ID})")
-        else:
-            credential = DefaultAzureCredential()
-            document_analysis_client = DocumentAnalysisClient(
-                endpoint=DOCINTEL_ENDPOINT, credential=credential
-            )
-            print("✓ Document Intelligence client initialised with default credential")
+        # Use DefaultAzureCredential without managed_identity_client_id.
+        # On Container Apps with both system-assigned and user-assigned
+        # identities, ManagedIdentityCredential (inside DAC) defaults to the
+        # system-assigned identity when no client_id is specified.
+        # NOTE: Do NOT set env var AZURE_CLIENT_ID — it is a reserved name
+        # that EnvironmentCredential consumes, causing auth failures.
+        credential = DefaultAzureCredential()
+        document_analysis_client = DocumentAnalysisClient(
+            endpoint=DOCINTEL_ENDPOINT, credential=credential
+        )
+        print("✓ Document Intelligence client initialised with DefaultAzureCredential")
     except Exception as e:
         print(
             f"⚠️  Warning: Could not initialise Document Intelligence client: {e}")

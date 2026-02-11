@@ -44,6 +44,7 @@ try:
     _AGENT_FRAMEWORK_AVAILABLE = True
 except ImportError as exc:
     _import_error = str(exc)
+    print(f"⚠️  agent-framework import failed: {_import_error}")
 
 
 # ---------------------------------------------------------------------------

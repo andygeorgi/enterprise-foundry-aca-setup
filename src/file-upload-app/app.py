@@ -30,6 +30,8 @@ from upload_backend import (
 
 # -- Agent workflow imports --------------------------------------------------
 from agent_workflow import (
+    _AGENT_FRAMEWORK_AVAILABLE,
+    _import_error,
     format_analysis_for_agent,
     is_agent_available,
     run_document_analysis,
@@ -285,10 +287,15 @@ with col_chat:
         st.caption(
             "🟢 Agent orchestrator active — routes to DocumentAnalyst / GeneralAssistant")
     else:
-        st.caption(
-            "⚪ Agent not configured — using echo mode  ·  "
-            "Set `AZURE_AI_PROJECT_ENDPOINT` in .env"
-        )
+        if not _AGENT_FRAMEWORK_AVAILABLE:
+            st.caption(
+                f"⚪ Agent not available — agent-framework import failed: `{_import_error}`"
+            )
+        else:
+            st.caption(
+                "⚪ Agent not configured — using echo mode  ·  "
+                "Set `AZURE_AI_PROJECT_ENDPOINT` in .env"
+            )
 
     # -- File context selector (existing + new uploads) ---------------------
     existing_files = list_uploaded_files()

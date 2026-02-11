@@ -255,6 +255,16 @@ resource "azurerm_role_assignment" "file_upload_docintel_user" {
   depends_on = [azurerm_container_app.file_upload]
 }
 
+# RBAC: Grant system-assigned identity Contributor access to Document Intelligence
+resource "azurerm_role_assignment" "file_upload_docintel_contributor" {
+  count                = var.docintel_name != "" ? 1 : 0
+  scope                = data.azurerm_cognitive_account.docintel[0].id
+  role_definition_name = "Cognitive Services Contributor"
+  principal_id         = azurerm_container_app.file_upload.identity[0].principal_id
+  
+  depends_on = [azurerm_container_app.file_upload]
+}
+
 # RBAC: Grant system-assigned identity OpenAI access to Document Intelligence
 resource "azurerm_role_assignment" "file_upload_docintel_openai_user" {
   count                = var.docintel_name != "" ? 1 : 0

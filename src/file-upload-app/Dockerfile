@@ -1,4 +1,4 @@
-FROM python:3.11-slim
+FROM python:3.12-slim
 
 # Set working directory
 WORKDIR /app
@@ -14,7 +14,7 @@ COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
 # Copy application code
-COPY app.py upload_backend.py ./
+COPY app.py upload_backend.py agent_workflow.py ./
 
 # Copy templates and static assets (still used by the Flask backend viewer)
 COPY templates/ ./templates/
