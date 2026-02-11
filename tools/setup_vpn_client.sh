@@ -12,11 +12,18 @@ YELLOW='\033[1;33m'
 RED='\033[0;31m'
 NC='\033[0m'
 
-# Configuration - can be overridden via environment variables
+# Configuration - load from .env if available, allow env var overrides
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+if [ -f "$SCRIPT_DIR/.env" ]; then
+    set -a
+    source "$SCRIPT_DIR/.env"
+    set +a
+fi
+
 CERT_DIR="${HOME}/vpn-certs"
 VPN_DIR="${HOME}/OpenVPN"
-RG_NAME="${RG_NAME:-rg-foundry-sbx-net1}"
-VPN_GW_NAME="${VPN_GW_NAME:-vpngw-vnet-hub-sbc}"
+RG_NAME="${RG_NAME:-${RG_NET:?Error: RG_NET not set. Run ./tools/generate-env.sh first.}}"
+VPN_GW_NAME="${VPN_GW_NAME:?Error: VPN_GW_NAME not set. Run ./tools/generate-env.sh first.}"
 
 echo -e "${GREEN}========================================${NC}"
 echo -e "${GREEN}Azure VPN Client Setup Script${NC}"

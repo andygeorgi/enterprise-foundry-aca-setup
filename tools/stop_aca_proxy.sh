@@ -7,8 +7,7 @@ set -e
 
 # Configuration: Must match start_aca_proxy.sh
 declare -a PORTS=(
-    "8080"
-    "8081"
+    "443"
 )
 
 echo "🛑 Stopping ACA proxies..."
@@ -18,7 +17,7 @@ STOPPED=false
 
 for PORT in "${PORTS[@]}"; do
     if lsof -Pi :${PORT} -sTCP:LISTEN -t >/dev/null 2>&1 ; then
-        pkill -f "socat.*${PORT}" || true
+        sudo pkill -f "socat.*${PORT}" || true
         echo "✅ Proxy stopped on port ${PORT}"
         STOPPED=true
     else

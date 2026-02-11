@@ -12,13 +12,26 @@ YELLOW='\033[1;33m'
 BLUE='\033[0;34m'
 NC='\033[0m' # No Color
 
-# Configuration - update these based on your terraform.tfvars
-ACR_NAME="${ACR_NAME:-foundrysbxacr1}"
+# Configuration - load from .env if available, allow env var overrides
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+if [ -f "$SCRIPT_DIR/.env" ]; then
+    set -a
+    source "$SCRIPT_DIR/.env"
+    set +a
+fi
+
+ACR_NAME="${ACR_NAME:?Error: ACR_NAME not set. Run ./generate-env.sh first.}"
 IMAGE_NAME="${IMAGE_NAME:-file-upload-app}"
 IMAGE_TAG="${IMAGE_TAG:-latest}"
-RESOURCE_GROUP="${RESOURCE_GROUP:-rg-foundry-sbx-app1}"
+RESOURCE_GROUP="${RESOURCE_GROUP:?Error: RESOURCE_GROUP not set. Run ./generate-env.sh first.}"
 ACA_ENV_NAME="${ACA_ENV_NAME:-cae-foundry-sbx}"
 APP_NAME="${APP_NAME:-aca-file-upload}"
+
+# Azure service env vars (loaded from .env)
+AZURE_DOCINTEL_ENDPOINT="${AZURE_DOCINTEL_ENDPOINT:-}"
+AZURE_AI_PROJECT_ENDPOINT="${AZURE_AI_PROJECT_ENDPOINT:-}"
+AZURE_AI_MODEL_DEPLOYMENT_NAME="${AZURE_AI_MODEL_DEPLOYMENT_NAME:-gpt-4.1}"
+HEALTH_PORT="${HEALTH_PORT:-8081}"
 
 echo -e "${GREEN}================================${NC}"
 echo -e "${GREEN}Deploying to Azure Container Apps${NC}"
@@ -34,7 +47,7 @@ echo -e "${YELLOW}🔍 Getting managed identity...${NC}"
 IDENTITY_ID=$(az identity show --name "id-aca-acr-pull" --resource-group "$RESOURCE_GROUP" --query id -o tsv)
 IDENTITY_CLIENT_ID=$(az identity show --name "id-aca-acr-pull" --resource-group "$RESOURCE_GROUP" --query clientId -o tsv)
 
-# Check if app exists
+# Check if app already exists
 APP_EXISTS=$(az containerapp show --name "$APP_NAME" --resource-group "$RESOURCE_GROUP" 2>/dev/null || echo "")
 
 if [ -z "$APP_EXISTS" ]; then
@@ -54,32 +67,52 @@ if [ -z "$APP_EXISTS" ]; then
         --registry-server "$ACR_LOGIN_SERVER" \
         --registry-identity "$IDENTITY_ID" \
         --user-assigned "$IDENTITY_ID" \
+        --system-assigned \
         --env-vars \
             PORT=8080 \
             UPLOAD_FOLDER=/app/uploads \
-            MAX_CONTENT_LENGTH=16777216
+            MAX_CONTENT_LENGTH=16777216 \
+            HEALTH_PORT="$HEALTH_PORT" \
+            AZURE_DOCINTEL_ENDPOINT="$AZURE_DOCINTEL_ENDPOINT" \
+            AZURE_AI_PROJECT_ENDPOINT="$AZURE_AI_PROJECT_ENDPOINT" \
+            AZURE_AI_MODEL_DEPLOYMENT_NAME="$AZURE_AI_MODEL_DEPLOYMENT_NAME"
 else
     echo -e "${YELLOW}🔄 Updating existing container app: ${APP_NAME}${NC}"
+    
+    # Use a timestamp-based revision suffix to force a new revision
+    REVISION_SUFFIX="rev-$(date +%Y%m%d-%H%M%S)"
     
     az containerapp update \
         --name "$APP_NAME" \
         --resource-group "$RESOURCE_GROUP" \
-        --image "$FULL_IMAGE_NAME"
+        --image "$FULL_IMAGE_NAME" \
+        --revision-suffix "$REVISION_SUFFIX" \
+        --set-env-vars \
+            PORT=8080 \
+            UPLOAD_FOLDER=/app/uploads \
+            MAX_CONTENT_LENGTH=16777216 \
+            HEALTH_PORT="$HEALTH_PORT" \
+            AZURE_DOCINTEL_ENDPOINT="$AZURE_DOCINTEL_ENDPOINT" \
+            AZURE_AI_PROJECT_ENDPOINT="$AZURE_AI_PROJECT_ENDPOINT" \
+            AZURE_AI_MODEL_DEPLOYMENT_NAME="$AZURE_AI_MODEL_DEPLOYMENT_NAME"
 fi
 
 echo -e "${GREEN}================================${NC}"
 echo -e "${GREEN}✅ Deployment completed successfully!${NC}"
 echo -e "${GREEN}================================${NC}"
 
-# Get the app FQDN
+# Get the app FQDN and system identity info
 echo ""
 echo -e "${BLUE}Getting app details...${NC}"
 APP_FQDN=$(az containerapp show --name "$APP_NAME" --resource-group "$RESOURCE_GROUP" --query properties.configuration.ingress.fqdn -o tsv)
+SYSTEM_PRINCIPAL_ID=$(az containerapp show --name "$APP_NAME" --resource-group "$RESOURCE_GROUP" \
+    --query 'identity.principalId' -o tsv 2>/dev/null || echo 'N/A')
 
 echo ""
 echo -e "${GREEN}Container App Details:${NC}"
-echo -e "  Name: ${YELLOW}${APP_NAME}${NC}"
-echo -e "  FQDN: ${YELLOW}${APP_FQDN}${NC}"
-echo -e "  URL:  ${YELLOW}https://${APP_FQDN}${NC}"
+echo -e "  Name:              ${YELLOW}${APP_NAME}${NC}"
+echo -e "  FQDN:              ${YELLOW}${APP_FQDN}${NC}"
+echo -e "  URL:               ${YELLOW}https://${APP_FQDN}${NC}"
+echo -e "  System Identity:   ${YELLOW}${SYSTEM_PRINCIPAL_ID}${NC}"
 echo ""
 echo -e "${BLUE}Note: The app uses internal ingress. Access from within the VNet or via VPN.${NC}"
