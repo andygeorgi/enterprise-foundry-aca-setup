@@ -1,0 +1,30 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "File Upload App (Streamlit)",
+      "type": "debugpy",
+      "request": "launch",
+      "module": "streamlit",
+      "args": ["run", "app.py", "--server.port", "8080"],
+      "cwd": "${workspaceFolder}/src/file-upload-app",
+      "envFile": "${workspaceFolder}/src/file-upload-app/.env",
+      "env": {
+        "HEALTH_PORT": "8081",
+        "UPLOAD_FOLDER": "./uploads"
+      },
+      "console": "integratedTerminal",
+      "justMyCode": true
+    },
+    {
+      "name": "File Upload App (Tests)",
+      "type": "debugpy",
+      "request": "launch",
+      "program": "${workspaceFolder}/src/file-upload-app/test_local.py",
+      "cwd": "${workspaceFolder}/src/file-upload-app",
+      "envFile": "${workspaceFolder}/src/file-upload-app/.env",
+      "console": "integratedTerminal",
+      "justMyCode": true
+    }
+  ]
+}
