@@ -22,7 +22,6 @@ crash.*.log
 
 # IDE
 .idea/
-.vscode/
 *.swp
 *.swo
 
