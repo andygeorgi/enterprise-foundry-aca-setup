@@ -60,7 +60,9 @@ env/
 ENV/
 .venv/
 
-# IDE (keep .vscode/ for launch configs)
+# IDE (keep .vscode/launch.json only)
+.vscode/*
+!.vscode/launch.json
 .idea/
 *.swp
 *.swo
