@@ -10,8 +10,8 @@ All heavy lifting (Azure Doc Intelligence, file persistence) is delegated to
 ``upload_backend.py``.
 """
 
-import json
 import os
+import re
 import threading
 from datetime import datetime
 
@@ -24,7 +24,7 @@ from upload_backend import (
     allowed_file,
     create_flask_app,
     list_uploaded_files,
-    load_analysis,
+    load_markdown,
     save_uploaded_bytes,
 )
 
@@ -32,7 +32,6 @@ from upload_backend import (
 from agent_workflow import (
     _AGENT_FRAMEWORK_AVAILABLE,
     _import_error,
-    format_analysis_for_agent,
     is_agent_available,
     run_document_analysis,
 )
@@ -51,37 +50,45 @@ st.set_page_config(
 # Flask health-check API  (runs in a background thread so container probes
 # still work – only the /health endpoint is needed)
 # ---------------------------------------------------------------------------
-_flask_started = False
-
-
 def _start_flask_health_server():
-    """Start a minimal Flask server in the background for /health probes."""
-    global _flask_started
-    if _flask_started:
-        return
-    _flask_started = True
-    flask_app = create_flask_app()
+    """Start a minimal Flask server in the background for /health probes.
+
+    Streamlit re-executes the whole script on every interaction, so we
+    use a file lock to ensure only one thread ever starts the server.
+    """
+    import socket
+    import tempfile
+    import fcntl
+
     health_port = int(os.environ.get("HEALTH_PORT", 8081))
+    lock_path = os.path.join(tempfile.gettempdir(), f"flask_health_{health_port}.lock")
+
+    try:
+        lock_fd = open(lock_path, "w")
+        fcntl.flock(lock_fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+    except (IOError, OSError):
+        # Another process/thread already holds the lock → server is running
+        return
+
+    # Check if port is already in use (e.g. from a previous container run)
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+        s.settimeout(0.5)
+        if s.connect_ex(("127.0.0.1", health_port)) == 0:
+            lock_fd.close()
+            return
+
+    flask_app = create_flask_app()
 
     def _run():
-        import socket
         try:
-            # Check if port is already in use before attempting to bind
-            with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
-                s.settimeout(0.5)
-                if s.connect_ex(("127.0.0.1", health_port)) == 0:
-                    print(
-                        f"⚠️  Health-check port {health_port} already in use – skipping Flask sidecar")
-                    return
             from werkzeug.serving import make_server
             srv = make_server("0.0.0.0", health_port, flask_app)
             print(f"✓ Flask health-check sidecar listening on :{health_port}")
             srv.serve_forever()
-        except Exception as exc:
-            print(f"⚠️  Could not start Flask health-check sidecar: {exc}")
+        except Exception:
+            pass  # silently ignore – port may have been grabbed in a race
 
-    thread = threading.Thread(target=_run, daemon=True)
-    thread.start()
+    threading.Thread(target=_run, daemon=True).start()
 
 
 _start_flask_health_server()
@@ -90,25 +97,34 @@ _start_flask_health_server()
 # Session-state defaults
 # ---------------------------------------------------------------------------
 if "chat_messages" not in st.session_state:
-    st.session_state.chat_messages = [
-        {
-            "role": "assistant",
-            "content": (
-                "👋 Hello! I'm the **Enterprise Foundry Agent**.\n\n"
-                "I can help you with document analysis using a multi-agent workflow:\n"
-                "1. **DocumentAnalyst** — extracts key fields and creates a structured table\n"
-                "2. **Summarizer** — provides a brief description of the findings\n\n"
-                "Upload a document on the left, then click **🤖 Analyse with Agent** "
-                "or ask me a question about your documents."
-            ),
-        }
-    ]
+    st.session_state.chat_messages = []
 if "upload_results" not in st.session_state:
     st.session_state.upload_results = []
 if "last_analysis_content" not in st.session_state:
     st.session_state.last_analysis_content = None
 if "selected_existing_files" not in st.session_state:
     st.session_state.selected_existing_files = []
+if "selected_design_file" not in st.session_state:
+    st.session_state.selected_design_file = None
+if "selected_other_file" not in st.session_state:
+    st.session_state.selected_other_file = None
+if "documents_processed" not in st.session_state:
+    st.session_state.documents_processed = False
+
+# ---------------------------------------------------------------------------
+# Filename-suffix validation (regex)
+# ---------------------------------------------------------------------------
+# Files must contain the suffix _design or _other before the file extension.
+# E.g. "floorplan_design.pdf", "report_other.png"
+_RE_DESIGN = re.compile(r"_design\.[^.]+$", re.IGNORECASE)
+_RE_OTHER = re.compile(r"_other\.[^.]+$", re.IGNORECASE)
+
+
+def validate_filename_suffix(filename: str, pattern: re.Pattern, label: str) -> str | None:
+    """Return an error message if *filename* does not match *pattern*, else None."""
+    if not pattern.search(filename):
+        return f"**{filename}** does not match the required `{label}` suffix (e.g. `myfile{label}.pdf`)"
+    return None
 
 # ---------------------------------------------------------------------------
 # Custom CSS
@@ -135,6 +151,17 @@ st.markdown(
     /* analysis result badges */
     .badge-ok  { color: #28a745; font-weight: 600; }
     .badge-err { color: #dc3545; font-weight: 600; }
+
+    /* blinking green process button */
+    @keyframes pulse-green {
+        0%   { box-shadow: 0 0 4px #28a745; }
+        50%  { box-shadow: 0 0 18px 4px #28a745; }
+        100% { box-shadow: 0 0 4px #28a745; }
+    }
+    .blink-green button[kind="primary"] {
+        animation: pulse-green 1.2s ease-in-out infinite;
+        border: 2px solid #28a745 !important;
+    }
     </style>
     """,
     unsafe_allow_html=True,
@@ -145,33 +172,63 @@ st.markdown(
 # ---------------------------------------------------------------------------
 
 
-def _format_agent_reply(result: dict) -> str:
-    """Format the orchestrator result dict into a chat-friendly Markdown reply."""
-    parts: list[str] = []
+def _split_agent_replies(result: dict) -> list[dict]:
+    """Return a list of chat-message dicts, one per agent section.
 
-    if result.get("analyst"):
-        parts.append(f"**📊 DocumentAnalyst:**\n\n{result['analyst']}")
-    if result.get("summarizer"):
-        parts.append(f"**💬 GeneralAssistant:**\n\n{result['summarizer']}")
+    Each dict has ``role`` (always ``'assistant'``) and ``content``.
+    This lets us render each agent as its own chat bubble.
+    """
+    msgs: list[dict] = []
 
-    # If neither specialist field is populated, use raw messages
-    if not parts and result.get("messages"):
+    if result.get("design_analysis"):
+        msgs.append({
+            "role": "assistant",
+            "content": (
+                "**📐 DesignDocAgent** — extracted design fields\n\n"
+                f"```json\n{result['design_analysis']}\n```"
+            ),
+        })
+    if result.get("other_analysis"):
+        msgs.append({
+            "role": "assistant",
+            "content": (
+                "**📄 OtherDocAgent** — extracted specifications\n\n"
+                f"```json\n{result['other_analysis']}\n```"
+            ),
+        })
+    if result.get("selection"):
+        msgs.append({
+            "role": "assistant",
+            "content": (
+                "**🎯 SelectionAgent** — consolidated result\n\n"
+                f"```json\n{result['selection']}\n```"
+            ),
+        })
+
+    # Fallback: raw messages
+    if not msgs and result.get("messages"):
         for msg in result["messages"]:
             text = msg.get("text", "")
             author = msg.get("author", "Agent")
             if text:
-                parts.append(f"**🤖 {author}:**\n\n{text}")
+                msgs.append({
+                    "role": "assistant",
+                    "content": f"**🤖 {author}**\n\n{text}",
+                })
 
-    return "\n\n---\n\n".join(parts) if parts else "No analysis produced."
+    if not msgs:
+        msgs.append({"role": "assistant", "content": "No analysis produced."})
+
+    return msgs
 
 
 # ---------------------------------------------------------------------------
 # Header
 # ---------------------------------------------------------------------------
-st.markdown("## 🏗️ Enterprise Foundry — File Upload & Agent Chat")
-st.caption(
-    "Upload documents for AI analysis  ·  Chat with the multi-agent orchestrator")
-st.divider()
+st.markdown(
+    '<h4 style="margin:0 0 .25rem 0">🏗️ Enterprise Foundry — File Upload & Agent Chat</h4>',
+    unsafe_allow_html=True,
+)
 
 # ---------------------------------------------------------------------------
 # Two-column layout
@@ -214,17 +271,6 @@ with col_upload:
 
             st.session_state.upload_results = results
             if results:
-                # Collect document content for agent workflow
-                all_content = []
-                for r in results:
-                    if r.get("json_file"):
-                        analysis = load_analysis(r["json_file"])
-                        if analysis:
-                            all_content.append(
-                                format_analysis_for_agent(analysis))
-                if all_content:
-                    st.session_state.last_analysis_content = "\n\n---\n\n".join(
-                        all_content)
                 st.success(f"✅ {len(results)} file(s) uploaded and analysed.")
 
     # -- Show most recent upload results ------------------------------------
@@ -234,25 +280,12 @@ with col_upload:
             with st.expander(f"📄 {r['original_filename']}  ({r['size']:,} bytes)", expanded=False):
                 if r.get("processed"):
                     st.markdown(
-                        f'<span class="badge-ok">✅ Processed</span> — '
-                        f'{r.get("pages", 0)} pages · '
-                        f'{r.get("tables", 0)} tables · '
-                        f'{r.get("key_value_pairs", 0)} key-value pairs',
+                        '<span class="badge-ok">✅ Processed</span>',
                         unsafe_allow_html=True,
                     )
-                    # Show analysis JSON
-                    analysis = load_analysis(r["json_file"])
-                    if analysis:
-                        if analysis.get("content"):
-                            st.text_area(
-                                "Extracted text",
-                                analysis["content"],
-                                height=200,
-                                disabled=True,
-                                key=f"txt_{r['filename']}",
-                            )
-                        with st.popover("🔍 Full JSON"):
-                            st.json(analysis)
+                    md_content = load_markdown(r.get("md_file", ""))
+                    if md_content:
+                        st.markdown(md_content)
                 else:
                     st.markdown(
                         f'<span class="badge-err">❌ Not processed</span> — {r.get("error", "unknown")}',
@@ -270,10 +303,10 @@ with col_upload:
             status = "✅" if f["has_analysis"] else "—"
             with st.expander(f"{status} {label}  ({size_kb:.1f} KB)", expanded=False):
                 st.text(f"Modified: {f['modified']}")
-                if f["has_analysis"] and f["json_file"]:
-                    analysis = load_analysis(f["json_file"])
-                    if analysis:
-                        st.json(analysis)
+                if f["has_analysis"] and f["md_file"]:
+                    md_content = load_markdown(f["md_file"])
+                    if md_content:
+                        st.markdown(md_content)
     else:
         st.info("No files uploaded yet.")
 
@@ -297,77 +330,134 @@ with col_chat:
                 "Set `AZURE_AI_PROJECT_ENDPOINT` in .env"
             )
 
-    # -- File context selector (existing + new uploads) ---------------------
+    # -- File context selector (two dropdowns: _design + _other) -----------
     existing_files = list_uploaded_files()
     analysed_files = [
-        f for f in existing_files if f["has_analysis"] and f["json_file"]
+        f for f in existing_files if f["has_analysis"] and f["md_file"]
+    ]
+    file_options = [f["filename"] for f in analysed_files]
+
+    st.markdown("##### 📎 Attach files to chat")
+    st.caption(
+        "Select one `_design` file and one `_other` file. "
+        "Both are required before the agent can run."
+    )
+
+    col_d, col_o = st.columns(2)
+    with col_d:
+        design_choice = st.selectbox(
+            "📐 Design file",
+            options=["— select —"] + file_options,
+            key="design_select",
+            help="Pick a file whose name contains `_design`.",
+        )
+    with col_o:
+        other_choice = st.selectbox(
+            "📄 Other file",
+            options=["— select —"] + file_options,
+            key="other_select",
+            help="Pick a file whose name contains `_other`.",
+        )
+
+    # -- Validate selections ------------------------------------------------
+    chat_validation_errors: list[str] = []
+    design_selected = design_choice != "— select —"
+    other_selected = other_choice != "— select —"
+
+    if design_selected:
+        err = validate_filename_suffix(design_choice, _RE_DESIGN, "_design")
+        if err:
+            chat_validation_errors.append(err)
+    if other_selected:
+        err = validate_filename_suffix(other_choice, _RE_OTHER, "_other")
+        if err:
+            chat_validation_errors.append(err)
+
+    both_files_ready = (
+        design_selected
+        and other_selected
+        and len(chat_validation_errors) == 0
+    )
+
+    if not design_selected or not other_selected:
+        if design_selected or other_selected:
+            st.warning(
+                "⚠️ Both a `_design` file and an `_other` file must be "
+                "selected before you can use the agent."
+            )
+
+    for ve in chat_validation_errors:
+        st.error(f"❌ {ve}")
+
+    # -- Persist validated selections into session state --------------------
+    st.session_state.selected_design_file = design_choice if design_selected else None
+    st.session_state.selected_other_file = other_choice if other_selected else None
+    st.session_state.selected_existing_files = [
+        f for f in [st.session_state.selected_design_file,
+                    st.session_state.selected_other_file] if f
     ]
 
-    if analysed_files:
-        file_options = [f["filename"] for f in analysed_files]
-        selected = st.multiselect(
-            "📎 Attach existing files to chat",
-            options=file_options,
-            default=st.session_state.selected_existing_files,
-            placeholder="Select previously uploaded files…",
-            help="Pick one or more analysed files to include as context for the agent.",
-        )
-        st.session_state.selected_existing_files = selected
-    else:
-        selected = []
+    # -- Reset processed flag if selections change -------------------------
+    prev_pair = st.session_state.get("_prev_file_pair")
+    curr_pair = (st.session_state.selected_design_file, st.session_state.selected_other_file)
+    if prev_pair != curr_pair:
+        st.session_state.documents_processed = False
+    st.session_state._prev_file_pair = curr_pair
 
-    # -- Build combined analysis content from all sources -------------------
-    def _gather_analysis_content() -> str | None:
-        """Merge content from selected existing files + newly uploaded files."""
-        parts: list[str] = []
+    # -- Load individual file content for the two agents -------------------
+    def _load_file_content(fname: str | None) -> str | None:
+        if not fname:
+            return None
+        md_name = fname + ".md"
+        md_content = load_markdown(md_name)
+        if md_content:
+            return f"### File: {fname}\n{md_content}"
+        return None
 
-        # 1) Selected existing files
-        for fname in st.session_state.selected_existing_files:
-            json_name = fname + ".analysis.json"
-            analysis = load_analysis(json_name)
-            if analysis:
-                parts.append(
-                    f"### File: {fname}\n" +
-                    format_analysis_for_agent(analysis)
-                )
-
-        # 2) Newly uploaded files (from last Upload & Analyse action)
-        if st.session_state.get("last_analysis_content"):
-            parts.append(str(st.session_state.last_analysis_content))
-
-        return "\n\n---\n\n".join(parts) if parts else None
-
-    combined_content = _gather_analysis_content()
+    design_content = _load_file_content(st.session_state.selected_design_file)
+    other_content = _load_file_content(st.session_state.selected_other_file)
 
     # Show attached-file summary
-    n_selected = len(st.session_state.selected_existing_files)
-    n_new = len(st.session_state.upload_results)
-    if n_selected or n_new:
-        badges = []
-        if n_selected:
-            badges.append(f"📎 {n_selected} existing")
-        if n_new:
-            badges.append(f"⬆️ {n_new} new")
-        st.info(f"Context: {' + '.join(badges)} file(s) attached")
+    if both_files_ready:
+        st.info(
+            f"📎 **Design:** {design_choice}  ·  "
+            f"**Other:** {other_choice}"
+        )
 
-    # -- Quick-action: run agent on attached files --------------------------
-    if is_agent_available() and combined_content:
+    # -- Process button (blinking green when both files ready) --------------
+    if both_files_ready and not st.session_state.documents_processed:
+        # Wrap in a div that triggers the blinking CSS
+        st.markdown('<div class="blink-green">', unsafe_allow_html=True)
         if st.button(
-            "🤖 Analyse attached files with Agent",
+            "🤖 Process uploaded files",
+            type="primary",
             use_container_width=True,
         ):
-            with st.spinner(
-                "Running agent orchestrator…"
-            ):
-                result = run_document_analysis(combined_content)
-            if result["success"]:
-                reply = _format_agent_reply(result)
-                st.session_state.chat_messages.append(
-                    {"role": "assistant", "content": reply}
-                )
-                st.rerun()
+            if is_agent_available() and design_content and other_content:
+                with st.spinner("Running concurrent agent workflow…"):
+                    result = run_document_analysis(design_content, other_content)
+                if result["success"]:
+                    for agent_msg in _split_agent_replies(result):
+                        st.session_state.chat_messages.append(agent_msg)
+                    st.session_state.documents_processed = True
+                    st.rerun()
+                else:
+                    st.error(f"Agent error: {result.get('error', 'Unknown')}")
             else:
-                st.error(f"Agent error: {result.get('error', 'Unknown')}")
+                st.error(
+                    "Agent orchestrator is not available. Check your "
+                    "`AZURE_AI_PROJECT_ENDPOINT` configuration."
+                )
+        st.markdown('</div>', unsafe_allow_html=True)
+    elif both_files_ready and st.session_state.documents_processed:
+        st.success("✅ Documents processed — chat is now enabled.")
+    elif is_agent_available():
+        st.button(
+            "🤖 Process uploaded files",
+            use_container_width=True,
+            disabled=True,
+            help="Select both a _design and an _other file first.",
+        )
 
     # -- Chat history -------------------------------------------------------
     chat_container = st.container(height=400)
@@ -376,46 +466,46 @@ with col_chat:
             with st.chat_message(msg["role"]):
                 st.markdown(msg["content"])
 
-    # -- Chat input ---------------------------------------------------------
-    user_input = st.chat_input("Type a message…", key="chat_input")
+    # -- Chat input (disabled until documents are processed) ----------------
+    if st.session_state.documents_processed:
+        user_input = st.chat_input("Type a message…", key="chat_input")
+    else:
+        user_input = st.chat_input(
+            "Process both files first to enable chat…",
+            key="chat_input",
+            disabled=True,
+        )
 
     if user_input:
-        # Store user message
         st.session_state.chat_messages.append(
             {"role": "user", "content": user_input}
         )
 
-        # Use agent workflow when available + files attached
-        if is_agent_available() and combined_content:
-            augmented = f"{combined_content}\n\n---\nUser question: {user_input}"
+        reply: str | None = None
+
+        if is_agent_available() and design_content and other_content:
+            augmented_design = f"{design_content}\n\n---\nUser question: {user_input}"
+            augmented_other = f"{other_content}\n\n---\nUser question: {user_input}"
             with st.spinner("🤖 Agent is thinking…"):
-                result = run_document_analysis(augmented)
+                result = run_document_analysis(augmented_design, augmented_other)
             if result["success"]:
-                reply = _format_agent_reply(result)
-            else:
-                reply = f"❌ Agent error: {result.get('error', 'Unknown')}"
-        elif is_agent_available():
-            # No documents attached but agent is available — general question
-            with st.spinner("🤖 Agent is thinking…"):
-                result = run_document_analysis(user_input)
-            if result["success"]:
-                reply = _format_agent_reply(result)
+                for agent_msg in _split_agent_replies(result):
+                    st.session_state.chat_messages.append(agent_msg)
+                st.rerun()
             else:
                 reply = f"❌ Agent error: {result.get('error', 'Unknown')}"
         else:
-            # Agent not configured – inform the user
             reply = (
                 "⚠️ The agent orchestrator is not configured.\n\n"
                 "Set `AZURE_AI_PROJECT_ENDPOINT` and `AZURE_AI_MODEL_DEPLOYMENT_NAME` "
                 "in your `.env` file to enable the multi-agent workflow."
             )
 
-        st.session_state.chat_messages.append(
-            {"role": "assistant", "content": reply}
-        )
-
-        # Rerun to render the new messages
-        st.rerun()
+        if reply:
+            st.session_state.chat_messages.append(
+                {"role": "assistant", "content": reply}
+            )
+            st.rerun()
 
 
 # ---------------------------------------------------------------------------

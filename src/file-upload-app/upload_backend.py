@@ -12,8 +12,9 @@ import json
 from datetime import datetime
 from pathlib import Path
 from werkzeug.utils import secure_filename
-from azure.ai.formrecognizer import DocumentAnalysisClient
-from azure.identity import DefaultAzureCredential
+from azure.ai.documentintelligence import DocumentIntelligenceClient
+from azure.ai.documentintelligence.models import AnalyzeDocumentRequest, DocumentContentFormat
+from azure.identity import AzureCliCredential
 from dotenv import load_dotenv
 
 # Load .env from the same directory as this file (src/file-upload-app/.env)
@@ -36,13 +37,13 @@ DOCINTEL_ENDPOINT = os.environ.get("AZURE_DOCINTEL_ENDPOINT", "")
 # ---------------------------------------------------------------------------
 # Azure Document Intelligence client (singleton)
 # ---------------------------------------------------------------------------
-document_analysis_client = None
+doc_intel_client: DocumentIntelligenceClient | None = None
 
 
 def _init_docintel_client():
     """Initialise the Document Intelligence client once."""
-    global document_analysis_client
-    if document_analysis_client is not None:
+    global doc_intel_client
+    if doc_intel_client is not None:
         return
 
     if not DOCINTEL_ENDPOINT:
@@ -50,17 +51,13 @@ def _init_docintel_client():
         return
 
     try:
-        # Use DefaultAzureCredential without managed_identity_client_id.
-        # On Container Apps with both system-assigned and user-assigned
-        # identities, ManagedIdentityCredential (inside DAC) defaults to the
-        # system-assigned identity when no client_id is specified.
-        # NOTE: Do NOT set env var AZURE_CLIENT_ID — it is a reserved name
-        # that EnvironmentCredential consumes, causing auth failures.
-        credential = DefaultAzureCredential()
-        document_analysis_client = DocumentAnalysisClient(
+        # Using AzureCliCredential for local development.
+        # Switch back to DefaultAzureCredential for deployed environments.
+        credential = AzureCliCredential()
+        doc_intel_client = DocumentIntelligenceClient(
             endpoint=DOCINTEL_ENDPOINT, credential=credential
         )
-        print("✓ Document Intelligence client initialised with DefaultAzureCredential")
+        print("✓ Document Intelligence client initialised with AzureCliCredential")
     except Exception as e:
         print(
             f"⚠️  Warning: Could not initialise Document Intelligence client: {e}")
@@ -79,103 +76,45 @@ def allowed_file(filename: str) -> bool:
     return "." in filename and filename.rsplit(".", 1)[1].lower() in ALLOWED_EXTENSIONS
 
 
-def process_document_with_ai(filepath: str) -> dict:
+def process_document_with_ai(filepath: str) -> tuple[str | None, str | None]:
     """
-    Process a document with Azure Document Intelligence.
-    Returns a dict with analysis results as JSON-serialisable data.
+    Process a document with Azure Document Intelligence (prebuilt-layout,
+    markdown output).
+
+    Returns (markdown_content, error).  Exactly one will be non-None.
     """
-    if not document_analysis_client:
-        return {"error": "Document Intelligence not configured", "processed": False}
+    if not doc_intel_client:
+        return None, "Document Intelligence not configured"
 
     try:
-        file_ext = filepath.rsplit(
-            ".", 1)[1].lower() if "." in filepath else ""
+        file_ext = filepath.rsplit(".", 1)[1].lower() if "." in filepath else ""
         processable_types = {"pdf", "png", "jpg", "jpeg", "tiff", "bmp"}
 
         if file_ext not in processable_types:
-            return {
-                "error": f"File type .{file_ext} not supported for document analysis",
-                "processed": False,
-                "file_type": file_ext,
-            }
+            return None, f"File type .{file_ext} not supported for document analysis"
 
         with open(filepath, "rb") as f:
-            poller = document_analysis_client.begin_analyze_document(
-                "prebuilt-document", f)
-            result = poller.result()
+            file_bytes = f.read()
 
-        analysis_result = {
-            "processed": True,
-            "model_id": result.model_id,
-            "api_version": result.api_version,
-            "content": result.content,
-            "pages": [],
-            "tables": [],
-            "key_value_pairs": [],
-            "paragraphs": [],
-        }
+        import base64
+        b64_content = base64.b64encode(file_bytes).decode("utf-8")
 
-        for page in result.pages:
-            page_info = {
-                "page_number": page.page_number,
-                "width": page.width,
-                "height": page.height,
-                "unit": page.unit,
-                "lines_count": len(page.lines) if page.lines else 0,
-                "words_count": len(page.words) if page.words else 0,
-                "lines": [
-                    {"content": line.content, "polygon": [
-                        list(point) for point in line.polygon]}
-                    for line in (page.lines or [])
-                ],
-            }
-            analysis_result["pages"].append(page_info)
-
-        if result.tables:
-            for table in result.tables:
-                table_info = {
-                    "row_count": table.row_count,
-                    "column_count": table.column_count,
-                    "cells": [
-                        {
-                            "content": cell.content,
-                            "row_index": cell.row_index,
-                            "column_index": cell.column_index,
-                            "row_span": cell.row_span,
-                            "column_span": cell.column_span,
-                        }
-                        for cell in table.cells
-                    ],
-                }
-                analysis_result["tables"].append(table_info)
-
-        if result.key_value_pairs:
-            for kv in result.key_value_pairs:
-                kv_info = {
-                    "key": kv.key.content if kv.key else None,
-                    "value": kv.value.content if kv.value else None,
-                    "confidence": kv.confidence,
-                }
-                analysis_result["key_value_pairs"].append(kv_info)
-
-        if result.paragraphs:
-            for para in result.paragraphs:
-                para_info = {
-                    "content": para.content,
-                    "role": para.role if hasattr(para, "role") else None,
-                }
-                analysis_result["paragraphs"].append(para_info)
-
-        return analysis_result
+        poller = doc_intel_client.begin_analyze_document(
+            "prebuilt-layout",
+            AnalyzeDocumentRequest(bytes_source=b64_content),
+            output_content_format=DocumentContentFormat.MARKDOWN,
+        )
+        result = poller.result()
+        return result.content or "", None
 
     except Exception as e:
-        return {"error": f"Document analysis failed: {str(e)}", "processed": False}
+        return None, f"Document analysis failed: {e}"
 
 
 def save_uploaded_file(uploaded_file_storage) -> dict:
     """
     Accept a werkzeug ``FileStorage`` object (from Flask's ``request.files``),
-    persist it to disk, run AI analysis, and return a result dict.
+    persist it to disk, run layout analysis, and return a result dict.
     """
     filename = secure_filename(uploaded_file_storage.filename)
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -186,33 +125,23 @@ def save_uploaded_file(uploaded_file_storage) -> dict:
     file_size = os.path.getsize(filepath)
     print(f"✓ Uploaded: {unique_filename} ({file_size} bytes)")
 
-    analysis_result = process_document_with_ai(filepath)
-
-    json_filepath = filepath + ".analysis.json"
-    with open(json_filepath, "w", encoding="utf-8") as jf:
-        json.dump(analysis_result, jf, indent=2, ensure_ascii=False)
-    print(f"  → Analysis saved: {os.path.basename(json_filepath)}")
+    md_content, error = process_document_with_ai(filepath)
 
     file_result = {
         "filename": unique_filename,
         "original_filename": filename,
         "size": file_size,
-        "processed": analysis_result.get("processed", False),
-        "json_file": os.path.basename(json_filepath),
+        "processed": md_content is not None,
     }
 
-    if analysis_result.get("processed"):
-        file_result["pages"] = len(analysis_result.get("pages", []))
-        file_result["tables"] = len(analysis_result.get("tables", []))
-        file_result["key_value_pairs"] = len(
-            analysis_result.get("key_value_pairs", []))
-        print(
-            f"  → Extracted: {file_result['pages']} pages, "
-            f"{file_result['tables']} tables, "
-            f"{file_result['key_value_pairs']} key-value pairs"
-        )
+    if md_content is not None:
+        md_filepath = filepath + ".md"
+        with open(md_filepath, "w", encoding="utf-8") as mf:
+            mf.write(md_content)
+        file_result["md_file"] = os.path.basename(md_filepath)
+        print(f"  → Markdown saved: {file_result['md_file']} ({len(md_content)} chars)")
     else:
-        file_result["error"] = analysis_result.get("error", "Unknown error")
+        file_result["error"] = error or "Unknown error"
         print(f"  ⚠️  Not processed: {file_result['error']}")
 
     return file_result
@@ -221,7 +150,7 @@ def save_uploaded_file(uploaded_file_storage) -> dict:
 def save_uploaded_bytes(file_bytes: bytes, original_filename: str) -> dict:
     """
     Accept raw bytes + filename (e.g. from Streamlit's ``st.file_uploader``),
-    persist to disk, run AI analysis, and return a result dict.
+    persist to disk, run layout analysis, and return a result dict.
     """
     filename = secure_filename(original_filename)
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -234,28 +163,23 @@ def save_uploaded_bytes(file_bytes: bytes, original_filename: str) -> dict:
     file_size = os.path.getsize(filepath)
     print(f"✓ Uploaded: {unique_filename} ({file_size} bytes)")
 
-    analysis_result = process_document_with_ai(filepath)
-
-    json_filepath = filepath + ".analysis.json"
-    with open(json_filepath, "w", encoding="utf-8") as jf:
-        json.dump(analysis_result, jf, indent=2, ensure_ascii=False)
-    print(f"  → Analysis saved: {os.path.basename(json_filepath)}")
+    md_content, error = process_document_with_ai(filepath)
 
     file_result = {
         "filename": unique_filename,
         "original_filename": filename,
         "size": file_size,
-        "processed": analysis_result.get("processed", False),
-        "json_file": os.path.basename(json_filepath),
+        "processed": md_content is not None,
     }
 
-    if analysis_result.get("processed"):
-        file_result["pages"] = len(analysis_result.get("pages", []))
-        file_result["tables"] = len(analysis_result.get("tables", []))
-        file_result["key_value_pairs"] = len(
-            analysis_result.get("key_value_pairs", []))
+    if md_content is not None:
+        md_filepath = filepath + ".md"
+        with open(md_filepath, "w", encoding="utf-8") as mf:
+            mf.write(md_content)
+        file_result["md_file"] = os.path.basename(md_filepath)
+        print(f"  → Markdown saved: {file_result['md_file']} ({len(md_content)} chars)")
     else:
-        file_result["error"] = analysis_result.get("error", "Unknown error")
+        file_result["error"] = error or "Unknown error"
 
     return file_result
 
@@ -264,22 +188,23 @@ def list_uploaded_files() -> list[dict]:
     """Return a list of dicts describing every uploaded file."""
     files: list[dict] = []
     for filename in os.listdir(UPLOAD_FOLDER):
-        if filename.endswith(".analysis.json"):
+        # Skip sidecar files
+        if filename.endswith(".md") or filename.endswith(".analysis.json"):
             continue
         filepath = os.path.join(UPLOAD_FOLDER, filename)
         if not os.path.isfile(filepath):
             continue
 
-        json_file = filename + ".analysis.json"
-        json_exists = os.path.exists(os.path.join(UPLOAD_FOLDER, json_file))
+        md_file = filename + ".md"
+        md_exists = os.path.exists(os.path.join(UPLOAD_FOLDER, md_file))
 
         files.append(
             {
                 "filename": filename,
                 "size": os.path.getsize(filepath),
                 "modified": datetime.fromtimestamp(os.path.getmtime(filepath)).isoformat(),
-                "has_analysis": json_exists,
-                "json_file": json_file if json_exists else None,
+                "has_analysis": md_exists,
+                "md_file": md_file if md_exists else None,
             }
         )
 
@@ -287,16 +212,16 @@ def list_uploaded_files() -> list[dict]:
     return files
 
 
-def load_analysis(json_filename: str) -> dict | None:
-    """Load and return a previously saved analysis JSON, or None."""
-    if not json_filename.endswith(".analysis.json"):
+def load_markdown(md_filename: str) -> str | None:
+    """Load and return a previously saved markdown analysis, or None."""
+    if not md_filename.endswith(".md"):
         return None
-    safe = secure_filename(json_filename)
+    safe = secure_filename(md_filename)
     path = os.path.join(UPLOAD_FOLDER, safe)
     if not os.path.exists(path):
         return None
     with open(path, "r", encoding="utf-8") as f:
-        return json.load(f)
+        return f.read()
 
 
 # ---------------------------------------------------------------------------
@@ -354,10 +279,10 @@ def create_flask_app() -> Flask:
 
     @app.route("/analysis/<filename>")
     def get_analysis(filename):
-        data = load_analysis(filename)
-        if data is None:
+        content = load_markdown(filename)
+        if content is None:
             return jsonify({"error": "Analysis not found"}), 404
-        return jsonify(data), 200
+        return content, 200, {"Content-Type": "text/markdown; charset=utf-8"}
 
     @app.route("/files")
     def list_files():
@@ -366,18 +291,6 @@ def create_flask_app() -> Flask:
             return jsonify({"files": files, "count": len(files)}), 200
         except Exception as e:
             return jsonify({"error": str(e)}), 500
-
-    @app.route("/view/<filename>")
-    def view_analysis(filename):
-        data = load_analysis(filename)
-        if data is None:
-            return "Analysis not found", 404
-        return render_template(
-            "viewer.html",
-            filename=filename,
-            json_data=json.dumps(data, indent=2),
-            analysis=data,
-        )
 
     return app
 
