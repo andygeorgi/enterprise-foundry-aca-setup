@@ -37,6 +37,7 @@ from agent_workflow import (
     is_agent_available,
     run_chat_query,
     run_document_analysis,
+    run_estimation_analysis,
 )
 
 # ---------------------------------------------------------------------------
@@ -128,6 +129,10 @@ if "documents_processed" not in st.session_state:
     st.session_state.documents_processed = False
 if "processing_result" not in st.session_state:
     st.session_state.processing_result = None
+if "estimation_uploaded" not in st.session_state:
+    st.session_state.estimation_uploaded = False
+if "estimation_result" not in st.session_state:
+    st.session_state.estimation_result = None
 
 # ---------------------------------------------------------------------------
 # Custom CSS
@@ -205,6 +210,14 @@ def _split_agent_replies(result: dict) -> list[dict]:
             "content": (
                 "**🎯 SelectionAgent** — consolidated result\n\n"
                 f"```json\n{result['selection']}\n```"
+            ),
+        })
+    if result.get("estimation_analysis"):
+        msgs.append({
+            "role": "assistant",
+            "content": (
+                "**💰 EstimationAgent** — calculation analysis\n\n"
+                f"```json\n{result['estimation_analysis']}\n```"
             ),
         })
 
@@ -433,6 +446,8 @@ with col_chat:
     curr_pair = (classified_design, classified_other)
     if prev_pair != curr_pair:
         st.session_state.documents_processed = False
+        st.session_state.estimation_uploaded = False
+        st.session_state.estimation_result = None
     st.session_state._prev_file_pair = curr_pair
 
     design_content = _load_file_content(classified_design)
@@ -474,7 +489,7 @@ with col_chat:
                 )
         st.markdown('</div>', unsafe_allow_html=True)
     elif both_files_ready and st.session_state.documents_processed:
-        st.success("✅ Documents processed — chat is now enabled.")
+        st.success("✅ Documents processed.")
     elif is_agent_available():
         st.button(
             "🤖 Process uploaded files",
@@ -482,6 +497,81 @@ with col_chat:
             disabled=True,
             help="Select files that classify as one design doc and one specs doc.",
         )
+
+    # -- Estimation upload (appears in chat area after processing) ----------
+    if st.session_state.documents_processed and not st.session_state.estimation_uploaded:
+        st.divider()
+        st.markdown(
+            "💰 **EstimationAgent** — Upload a heat exchanger calculation "
+            "document to verify it against the extracted specifications."
+        )
+        estimation_file = st.file_uploader(
+            "Upload calculation document",
+            type=list(ALLOWED_EXTENSIONS),
+            accept_multiple_files=False,
+            key="estimation_uploader",
+            help="Upload a thermal design calculation sheet for analysis.",
+        )
+        if estimation_file is not None:
+            st.markdown('<div class="blink-green">', unsafe_allow_html=True)
+            if st.button(
+                "💰 Analyse calculation",
+                type="primary",
+                use_container_width=True,
+                key="estimation_process_btn",
+            ):
+                with st.spinner("Processing estimation document…"):
+                    # 1. Save & extract via Document Intelligence
+                    try:
+                        est_result = save_uploaded_bytes(
+                            estimation_file.read(), estimation_file.name
+                        )
+                    except Exception as exc:
+                        st.error(f"❌ Upload failed: {exc}")
+                        est_result = None
+
+                    if est_result and est_result.get("processed"):
+                        est_md = load_markdown(est_result.get("md_file", "")) or ""
+
+                        # 2. Run EstimationAgent
+                        est_analysis = run_estimation_analysis(
+                            estimation_content=est_md,
+                            processing_context=st.session_state.processing_result or "",
+                        )
+
+                        if est_analysis["success"]:
+                            # Store in processing result
+                            est_text = est_analysis["estimation_analysis"]
+                            st.session_state.processing_result = (
+                                (st.session_state.processing_result or "")
+                                + f"\n\nEstimation Analysis:\n{est_text}"
+                            )
+                            st.session_state.estimation_result = est_text
+                            st.session_state.estimation_uploaded = True
+
+                            # Add to chat
+                            st.session_state.chat_messages.append({
+                                "role": "assistant",
+                                "content": (
+                                    "**💰 EstimationAgent** — calculation analysis\n\n"
+                                    f"```json\n{est_text}\n```"
+                                ),
+                            })
+                            st.rerun()
+                        else:
+                            st.error(
+                                f"EstimationAgent error: "
+                                f"{est_analysis.get('error', 'Unknown')}"
+                            )
+                    elif est_result:
+                        st.error(
+                            f"Document extraction failed: "
+                            f"{est_result.get('error', 'Unknown')}"
+                        )
+            st.markdown('</div>', unsafe_allow_html=True)
+
+    elif st.session_state.estimation_uploaded:
+        st.success("✅ Calculation analysed.")
 
     # -- Chat history -------------------------------------------------------
     chat_container = st.container(height=400)

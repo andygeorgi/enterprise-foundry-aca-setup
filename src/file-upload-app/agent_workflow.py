@@ -209,6 +209,81 @@ If no matching heat exchangers are found, return:
 {"matching_heat_exchangers": []}
 """
 
+_ESTIMATION_AGENT_INSTRUCTIONS = """\
+You are an expert **heat exchanger calculation analyst**.
+
+You receive:
+- The **combined specification** from the previous pipeline steps (item_no,
+  medical_cleaning, pressure/temperature ranges, matching heat exchangers).
+- The **markdown content** of a heat exchanger calculation / estimation
+  document (e.g. a thermal design calculation sheet).
+
+Your task:
+1. Extract all key **technical parameters** from the calculation document:
+   design pressures (shell & tube side), design temperatures (shell & tube
+   side), heat transfer area, tube dimensions (OD, wall thickness, length,
+   number of tubes), shell diameter, baffle spacing, TEMA type, material
+   specifications, fouling resistances, overall heat transfer coefficient,
+   heat duty, and flow rates.
+2. Cross-reference the extracted calculation values with the combined
+   specification to verify compliance:
+   - Are the **design pressures** within the specified min/max range?
+   - Are the **design temperatures** within the specified min/max range?
+   - Does the **mechanical cleaning** requirement match (e.g. removable
+     bundle, adequate tube pitch for cleaning)?
+3. Highlight any **discrepancies** or concerns (e.g. pressure rating
+   exceeded, temperature out of range, insufficient cleaning access,
+   material incompatibility).
+4. Provide a structured technical summary.
+
+You MUST respond with **only** a valid JSON object – no markdown fences, no
+commentary, no extra text.  The JSON schema is:
+
+{
+  "calculation_summary": {
+    "tema_type": "<string or null>",
+    "heat_duty_kw": <number or null>,
+    "heat_transfer_area_m2": <number or null>,
+    "overall_u_w_m2k": <number or null>,
+    "shell_side": {
+      "design_pressure": <number or null>,
+      "design_temperature": <number or null>,
+      "pressure_unit": "<string or null>",
+      "temperature_unit": "<string or null>",
+      "fluid": "<string or null>",
+      "flow_rate": <number or null>,
+      "flow_rate_unit": "<string or null>"
+    },
+    "tube_side": {
+      "design_pressure": <number or null>,
+      "design_temperature": <number or null>,
+      "pressure_unit": "<string or null>",
+      "temperature_unit": "<string or null>",
+      "fluid": "<string or null>",
+      "flow_rate": <number or null>,
+      "flow_rate_unit": "<string or null>"
+    },
+    "tube_od_mm": <number or null>,
+    "tube_wall_mm": <number or null>,
+    "tube_length_mm": <number or null>,
+    "number_of_tubes": <number or null>,
+    "shell_diameter_mm": <number or null>,
+    "baffle_spacing_mm": <number or null>,
+    "tube_material": "<string or null>",
+    "shell_material": "<string or null>",
+    "notes": "<string or null>"
+  },
+  "specification_match": {
+    "pressure_ok": true or false or null,
+    "temperature_ok": true or false or null,
+    "mechanical_cleaning_ok": true or false or null,
+    "discrepancies": ["<string>", ...]
+  }
+}
+
+If you cannot determine a field, use null for its value.
+"""
+
 
 # ---------------------------------------------------------------------------
 # Helper: extract JSON from agent response (strip markdown fences if any)
@@ -439,6 +514,96 @@ def run_document_analysis(
             "selection": "",
             "messages": [],
         }
+
+
+# ---------------------------------------------------------------------------
+# Estimation Agent – analyses an uploaded estimation document
+# ---------------------------------------------------------------------------
+
+async def _run_estimation_analysis_async(
+    estimation_content: str,
+    processing_context: str,
+) -> dict:
+    """Run the EstimationAgent on an uploaded estimation document."""
+    project_endpoint = os.getenv("AZURE_AI_PROJECT_ENDPOINT", "")
+    model_deployment = os.getenv("AZURE_AI_MODEL_DEPLOYMENT_NAME", "gpt-4.1")
+
+    result: dict[str, Any] = {
+        "success": True,
+        "estimation_analysis": "",
+        "error": None,
+    }
+
+    async with (
+        AzureCliCredential(process_timeout=30) as credential,
+        AzureAIProjectAgentProvider(
+            credential=credential,
+            project_endpoint=project_endpoint,
+        ) as provider,
+    ):
+        estimation_agent = await provider.create_agent(
+            model=model_deployment,
+            name="EstimationAgent",
+            instructions=_ESTIMATION_AGENT_INSTRUCTIONS,
+        )
+        print(f"  ✓ EstimationAgent created: {estimation_agent.id}")
+
+        prompt = (
+            f"## Combined specification from previous steps\n"
+            f"```\n{processing_context}\n```\n\n"
+            f"## Estimation document content\n\n{estimation_content}"
+        )
+
+        resp = await estimation_agent.run(prompt)
+        resp_text = resp.text or ""
+        resp_json = _extract_json(resp_text)
+        result["estimation_analysis"] = json.dumps(resp_json, indent=2)
+        print(f"  ✓ EstimationAgent result: {resp_json}")
+
+    return result
+
+
+def run_estimation_analysis(
+    estimation_content: str,
+    processing_context: str,
+) -> dict:
+    """Run EstimationAgent – safe to call from synchronous Streamlit code.
+
+    Returns dict with keys: ``success``, ``estimation_analysis``, ``error``.
+    """
+    if not _AGENT_FRAMEWORK_AVAILABLE:
+        return {
+            "success": False,
+            "estimation_analysis": "",
+            "error": f"agent-framework is not installed ({_import_error})",
+        }
+
+    try:
+        try:
+            loop = asyncio.get_running_loop()
+        except RuntimeError:
+            loop = None
+
+        if loop and loop.is_running():
+            import concurrent.futures
+
+            with concurrent.futures.ThreadPoolExecutor(max_workers=1) as pool:
+                future = pool.submit(
+                    asyncio.run,
+                    _run_estimation_analysis_async(
+                        estimation_content, processing_context
+                    ),
+                )
+                return future.result(timeout=120)
+        else:
+            return asyncio.run(
+                _run_estimation_analysis_async(
+                    estimation_content, processing_context
+                )
+            )
+
+    except Exception as exc:
+        return {"success": False, "estimation_analysis": "", "error": str(exc)}
 
 
 # ---------------------------------------------------------------------------
