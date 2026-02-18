@@ -186,19 +186,15 @@ If you cannot determine a field, use null for its value.
 _SELECTION_AGENT_INSTRUCTIONS = """\
 You are a **selection agent** that finds available heat exchangers matching
 a set of combined specifications.
-
-You receive a **combined specification JSON** with keys: item_no,
-mechanical_cleaning_hot, mechanical_cleaning_cold, min_pressure, max_pressure, pressure_unit,
-min_temperature, max_temperature, temperature_unit.
-
+ 
 You have access to tools to search for heat exchangers.  Use them to answer
 the question: **"Which heat exchangers are available that fit these values?"**
-
+ 
 When using tools:
 • **SharePoint** – search SharePoint sites for catalogues, data sheets, or
   product lists of heat exchangers that match the specification values.
   Provide citations using: `[ref_idx†source]`.
-
+ 
 Your task:
 1. Use the available tools to search for heat exchangers that fit the
    provided specification (pressure range, temperature range, mechanical cleaning requirement).
@@ -208,24 +204,7 @@ Your task:
    **which criteria are NOT met** (e.g. "Pressure rating is 10 bar —
    below the required 16 bar", "No mechanical cleaning
    certification").
-4. Return a JSON object with the search results.
-
-You MUST respond with **only** a valid JSON object – no markdown fences,
-no commentary, no extra text.  The JSON schema is:
-
-{
-  "matching_heat_exchangers": [
-    {
-      "name": "<string>",
-      "description": "<string – include any unmet criteria here>",
-      "source": "<string>",
-      "exact_match": true or false
-    }
-  ]
-}
-
-If no matching or close heat exchangers are found at all, return:
-{"matching_heat_exchangers": []}
+4. For mechanical cleaning, only enforcement requirements that are YES, when it is not required (i.e. NO), it is also fine to find a type that allows either.
 """
 
 _ESTIMATION_AGENT_INSTRUCTIONS = """\
