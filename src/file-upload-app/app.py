@@ -58,17 +58,30 @@ def _start_flask_health_server():
     """
     import socket
     import tempfile
-    import fcntl
+
+    try:
+        import fcntl
+    except ImportError:
+        fcntl = None  # type: ignore[assignment]
 
     health_port = int(os.environ.get("HEALTH_PORT", 8081))
     lock_path = os.path.join(tempfile.gettempdir(), f"flask_health_{health_port}.lock")
 
-    try:
-        lock_fd = open(lock_path, "w")
-        fcntl.flock(lock_fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
-    except (IOError, OSError):
-        # Another process/thread already holds the lock → server is running
-        return
+    if fcntl is not None:
+        try:
+            lock_fd = open(lock_path, "w")
+            fcntl.flock(lock_fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except (IOError, OSError):
+            # Another process/thread already holds the lock → server is running
+            return
+    else:
+        # Windows: use a simple lock-file existence check
+        import msvcrt
+        try:
+            lock_fd = open(lock_path, "w")
+            msvcrt.locking(lock_fd.fileno(), msvcrt.LK_NBLCK, 1)
+        except (IOError, OSError):
+            return
 
     # Check if port is already in use (e.g. from a previous container run)
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:

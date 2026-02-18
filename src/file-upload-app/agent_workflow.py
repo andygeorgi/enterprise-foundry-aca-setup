@@ -166,51 +166,43 @@ If you cannot determine a field, use null for its value.
 """
 
 _SELECTION_AGENT_INSTRUCTIONS = """\
-You are a **selection agent** that merges two JSON payloads produced by
-previous analysis steps into one consolidated result **and** identifies
-available heat exchangers that match the extracted specifications.
+You are a **selection agent** that finds available heat exchangers matching
+a set of combined specifications.
 
-You receive:
-- A JSON from the Design Document Agent with keys: medical_cleaning, item_no.
-- A JSON from the Specifications Agent with keys: item_no, min_pressure,
-  max_pressure, pressure_unit, min_temperature, max_temperature, temperature_unit.
+You receive a **combined specification JSON** with keys: item_no,
+medical_cleaning, min_pressure, max_pressure, pressure_unit,
+min_temperature, max_temperature, temperature_unit.
 
-You may have access to the following tools (use them when available):
+You have access to tools to search for heat exchangers.  Use them to answer
+the question: **"Which heat exchangers are available that fit these values?"**
 
+When using tools:
+• **SharePoint** – search SharePoint sites for catalogues, data sheets, or
+  product lists of heat exchangers that match the specification values.
 • **Azure AI Search** – search an index for heat exchangers that satisfy the
-  combined specification parameters (pressure range, temperature range,
-  medical cleaning requirement).  Always provide citations using the format:
-  `[ref_idx†source]`.
-• **SharePoint** – search SharePoint sites for additional documentation or
-  catalogue data about heat exchangers.
-
-If a tool is not available or returns no results, simply omit the
-corresponding key from your output.
+  specification parameters.  Provide citations using: `[ref_idx†source]`.
 
 Your task:
-1. Merge both agent payloads into a single JSON object.
-2. If there are conflicts on item_no, prefer the design document value.
-3. Add a top-level "status" key set to "complete" when both inputs are
-   present, or "partial" when one is missing or errored.
-4. Use the available tools to find which heat exchangers are available
-   based on the merged specification.  Include the results under the key
-   "matching_heat_exchangers" as an array of objects.
+1. Use the available tools to search for heat exchangers that fit the
+   provided specification (pressure range, temperature range, medical
+   cleaning requirement).
+2. Return a JSON object with the search results.
 
 You MUST respond with **only** a valid JSON object – no markdown fences,
 no commentary, no extra text.  The JSON schema is:
 
 {
-  "status": "complete" or "partial",
-  "item_no": "<string>",
-  "medical_cleaning": "yes" or "no",
-  "min_pressure": <number or null>,
-  "max_pressure": <number or null>,
-  "pressure_unit": "<string or null>",
-  "min_temperature": <number or null>,
-  "max_temperature": <number or null>,
-  "temperature_unit": "<string or null>",
-  "matching_heat_exchangers": [ ... ]   // optional
+  "matching_heat_exchangers": [
+    {
+      "name": "<string>",
+      "description": "<string>",
+      "source": "<string>"
+    }
+  ]
 }
+
+If no matching heat exchangers are found, return:
+{"matching_heat_exchangers": []}
 """
 
 
@@ -314,50 +306,81 @@ async def _run_sequential_analysis_async(
             "text": result["other_analysis"],
         })
 
-        # ── Step 3: SelectionAgent (with optional tools) ─────────────
-        tools_list: list[dict] = []
+        # ── Step 3: Merge results directly ────────────────────────────
+        combined: dict[str, Any] = {
+            "status": "complete",
+            "item_no": design_json.get("item_no") or other_json.get("item_no"),
+            "medical_cleaning": design_json.get("medical_cleaning"),
+            "min_pressure": other_json.get("min_pressure"),
+            "max_pressure": other_json.get("max_pressure"),
+            "pressure_unit": other_json.get("pressure_unit"),
+            "min_temperature": other_json.get("min_temperature"),
+            "max_temperature": other_json.get("max_temperature"),
+            "temperature_unit": other_json.get("temperature_unit"),
+        }
+        # Mark partial when either agent returned nothing useful
+        if not design_json.get("item_no") or not other_json.get("item_no"):
+            combined["status"] = "partial"
 
-        search_tool = _build_ai_search_tool()
-        if search_tool is not None:
-            tools_list.append(search_tool)
-            print("  ✓ Azure AI Search tool attached to SelectionAgent")
+        result["selection"] = json.dumps(combined, indent=2)
+        print(f"  ✓ Combined result: {combined}")
+
+        result["messages"].append({
+            "author": "CombinedResult",
+            "role": "assistant",
+            "text": result["selection"],
+        })
+
+        # ── Step 4: SelectionAgent – search for heat exchangers ──────
+        tools_list: list[dict] = []
 
         sharepoint_tool = _build_sharepoint_tool()
         if sharepoint_tool is not None:
             tools_list.append(sharepoint_tool)
             print("  ✓ SharePoint grounding tool attached to SelectionAgent")
 
-        create_kwargs: dict[str, Any] = {
-            "model": model_deployment,
-            "name": "SelectionAgent",
-            "instructions": _SELECTION_AGENT_INSTRUCTIONS,
-        }
-        if tools_list:
-            create_kwargs["tools"] = tools_list
+        search_tool = _build_ai_search_tool()
+        if search_tool is not None:
+            tools_list.append(search_tool)
+            print("  ✓ Azure AI Search tool attached to SelectionAgent")
+
+        if not tools_list:
+            print("ℹ️  No tools configured – skipping SelectionAgent")
         else:
-            print("ℹ️  No tools configured – SelectionAgent will run without tools")
+            create_kwargs: dict[str, Any] = {
+                "model": model_deployment,
+                "name": "SelectionAgent",
+                "instructions": _SELECTION_AGENT_INSTRUCTIONS,
+                "tools": tools_list,
+            }
 
-        selection_agent = await provider.create_agent(**create_kwargs)
-        print(f"  ✓ SelectionAgent created: {selection_agent.id}")
+            selection_agent = await provider.create_agent(**create_kwargs)
+            print(f"  ✓ SelectionAgent created: {selection_agent.id}")
 
-        selection_resp = await selection_agent.run(
-            f"Design Document Agent output:\n```json\n"
-            f"{json.dumps(design_json, indent=2)}\n```\n\n"
-            f"Specifications Agent output:\n```json\n"
-            f"{json.dumps(other_json, indent=2)}\n```\n\n"
-            f"Use the search tool to find which heat exchangers are available "
-            f"for the above specifications."
-        )
-        selection_text = selection_resp.text or ""
-        selection_json = _extract_json(selection_text)
-        result["selection"] = json.dumps(selection_json, indent=2)
-        print(f"  ✓ SelectionAgent result: {selection_json}")
+            selection_resp = await selection_agent.run(
+                f"Combined specification:\n```json\n"
+                f"{json.dumps(combined, indent=2)}\n```\n\n"
+                f"Which heat exchangers are available that fit these values? "
+                f"Search for heat exchangers matching the pressure range, "
+                f"temperature range, and medical cleaning requirement above."
+            )
+            selection_text = selection_resp.text or ""
+            selection_json = _extract_json(selection_text)
 
-        result["messages"].append({
-            "author": "SelectionAgent",
-            "role": "assistant",
-            "text": result["selection"],
-        })
+            # Merge search results into combined output
+            if selection_json.get("matching_heat_exchangers"):
+                combined["matching_heat_exchangers"] = selection_json[
+                    "matching_heat_exchangers"
+                ]
+                result["selection"] = json.dumps(combined, indent=2)
+
+            print(f"  ✓ SelectionAgent result: {selection_json}")
+
+            result["messages"].append({
+                "author": "SelectionAgent",
+                "role": "assistant",
+                "text": json.dumps(selection_json, indent=2),
+            })
 
     return result
 
