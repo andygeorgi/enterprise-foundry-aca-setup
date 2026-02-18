@@ -33,6 +33,7 @@ from agent_workflow import (
     _AGENT_FRAMEWORK_AVAILABLE,
     _import_error,
     is_agent_available,
+    run_chat_query,
     run_document_analysis,
 )
 
@@ -123,6 +124,8 @@ if "selected_other_file" not in st.session_state:
     st.session_state.selected_other_file = None
 if "documents_processed" not in st.session_state:
     st.session_state.documents_processed = False
+if "processing_result" not in st.session_state:
+    st.session_state.processing_result = None
 
 # ---------------------------------------------------------------------------
 # Filename-suffix validation (regex)
@@ -450,6 +453,16 @@ with col_chat:
                 with st.spinner("Running concurrent agent workflow…"):
                     result = run_document_analysis(design_content, other_content)
                 if result["success"]:
+                    # Store processing output for optional chat context
+                    proc_parts = []
+                    if result.get("design_analysis"):
+                        proc_parts.append(f"Design Analysis:\n{result['design_analysis']}")
+                    if result.get("other_analysis"):
+                        proc_parts.append(f"Specifications Analysis:\n{result['other_analysis']}")
+                    if result.get("selection"):
+                        proc_parts.append(f"Combined Selection:\n{result['selection']}")
+                    st.session_state.processing_result = "\n\n".join(proc_parts)
+
                     for agent_msg in _split_agent_replies(result):
                         st.session_state.chat_messages.append(agent_msg)
                     st.session_state.documents_processed = True
@@ -479,15 +492,23 @@ with col_chat:
             with st.chat_message(msg["role"]):
                 st.markdown(msg["content"])
 
-    # -- Chat input (disabled until documents are processed) ----------------
-    if st.session_state.documents_processed:
-        user_input = st.chat_input("Type a message…", key="chat_input")
-    else:
-        user_input = st.chat_input(
-            "Process both files first to enable chat…",
-            key="chat_input",
-            disabled=True,
+    # -- Chat options -------------------------------------------------------
+    if st.session_state.processing_result:
+        include_context = st.checkbox(
+            "📎 Include processing results as context",
+            value=True,
+            help="Attach the document analysis output to your message "
+                 "so the Senior Agent can reference it.",
         )
+    else:
+        include_context = False
+
+    # -- Chat input ---------------------------------------------------------
+    user_input = st.chat_input(
+        "Ask the Senior Agent about heat exchangers…",
+        key="chat_input",
+        disabled=not is_agent_available(),
+    )
 
     if user_input:
         st.session_state.chat_messages.append(
@@ -496,14 +517,22 @@ with col_chat:
 
         reply: str | None = None
 
-        if is_agent_available() and design_content and other_content:
-            augmented_design = f"{design_content}\n\n---\nUser question: {user_input}"
-            augmented_other = f"{other_content}\n\n---\nUser question: {user_input}"
-            with st.spinner("🤖 Agent is thinking…"):
-                result = run_document_analysis(augmented_design, augmented_other)
+        if is_agent_available():
+            proc_context = (
+                st.session_state.processing_result
+                if include_context and st.session_state.processing_result
+                else None
+            )
+            with st.spinner("🤖 Senior Agent is thinking…"):
+                result = run_chat_query(
+                    user_input,
+                    processing_context=proc_context,
+                    chat_history=st.session_state.chat_messages[:-1],
+                )
             if result["success"]:
-                for agent_msg in _split_agent_replies(result):
-                    st.session_state.chat_messages.append(agent_msg)
+                st.session_state.chat_messages.append(
+                    {"role": "assistant", "content": result["reply"]}
+                )
                 st.rerun()
             else:
                 reply = f"❌ Agent error: {result.get('error', 'Unknown')}"

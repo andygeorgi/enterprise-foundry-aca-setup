@@ -440,3 +440,145 @@ def run_document_analysis(
             "selection": "",
             "messages": [],
         }
+
+
+# ---------------------------------------------------------------------------
+# Senior Agent – handles follow-up chat questions
+# ---------------------------------------------------------------------------
+
+_SENIOR_AGENT_INSTRUCTIONS = """\
+You are a **Senior Heat Exchanger Specialist** with deep expertise in heat
+exchanger selection, specifications, standards, and applications.
+
+You have access to tools to search for information:
+• **SharePoint** – search SharePoint sites for catalogues, data sheets,
+  product lists, and technical documentation about heat exchangers.
+• **Azure AI Search** – search an indexed knowledge base for heat exchanger
+  specifications and related content.
+
+When answering questions:
+1. Use the available search tools to find relevant documents and data.
+2. Provide detailed, accurate answers grounded in the retrieved information.
+3. Cite your sources when referencing specific documents using
+   `[ref_idx†source]` notation.
+4. If processing results from the document analysis pipeline are provided
+   as context, leverage them to give more targeted and precise answers.
+5. If you cannot find the answer in the available sources, say so clearly
+   rather than guessing.
+
+Be helpful, precise, and thorough.  Respond in well-formatted **Markdown**.
+"""
+
+
+async def _run_chat_query_async(
+    user_message: str,
+    processing_context: str | None = None,
+    chat_history: list[dict] | None = None,
+) -> dict:
+    """Run a single turn of the SeniorAgent to answer a user question."""
+    project_endpoint = os.getenv("AZURE_AI_PROJECT_ENDPOINT", "")
+    model_deployment = os.getenv("AZURE_AI_MODEL_DEPLOYMENT_NAME", "gpt-4.1")
+
+    result: dict[str, Any] = {"success": True, "reply": "", "error": None}
+
+    async with (
+        AzureCliCredential(process_timeout=30) as credential,
+        AzureAIProjectAgentProvider(
+            credential=credential,
+            project_endpoint=project_endpoint,
+        ) as provider,
+    ):
+        # Collect tools
+        tools_list: list[dict] = []
+
+        sharepoint_tool = _build_sharepoint_tool()
+        if sharepoint_tool is not None:
+            tools_list.append(sharepoint_tool)
+            print("  ✓ SharePoint grounding tool attached to SeniorAgent")
+
+        search_tool = _build_ai_search_tool()
+        if search_tool is not None:
+            tools_list.append(search_tool)
+            print("  ✓ Azure AI Search tool attached to SeniorAgent")
+
+        create_kwargs: dict[str, Any] = {
+            "model": model_deployment,
+            "name": "SeniorAgent",
+            "instructions": _SENIOR_AGENT_INSTRUCTIONS,
+        }
+        if tools_list:
+            create_kwargs["tools"] = tools_list
+
+        senior_agent = await provider.create_agent(**create_kwargs)
+        print(f"  ✓ SeniorAgent created: {senior_agent.id}")
+
+        # Build prompt with optional history and processing context
+        parts: list[str] = []
+
+        if chat_history:
+            parts.append("## Previous conversation\n")
+            for msg in chat_history[-20:]:  # limit context window
+                role = msg.get("role", "user")
+                content = msg.get("content", "")
+                parts.append(f"**{role}**: {content}\n")
+            parts.append("---\n")
+
+        if processing_context:
+            parts.append(
+                "## Document processing results (from analysis pipeline)\n"
+                f"```\n{processing_context}\n```\n\n"
+            )
+
+        parts.append(f"## User question\n{user_message}")
+
+        prompt = "\n".join(parts)
+
+        response = await senior_agent.run(prompt)
+        result["reply"] = response.text or "No response from SeniorAgent."
+        print(f"  ✓ SeniorAgent replied ({len(result['reply'])} chars)")
+
+    return result
+
+
+def run_chat_query(
+    user_message: str,
+    processing_context: str | None = None,
+    chat_history: list[dict] | None = None,
+) -> dict:
+    """Run a SeniorAgent query – safe to call from synchronous Streamlit code.
+
+    Returns dict with keys: ``success``, ``reply``, ``error``.
+    """
+    if not _AGENT_FRAMEWORK_AVAILABLE:
+        return {
+            "success": False,
+            "reply": "",
+            "error": f"agent-framework is not installed ({_import_error})",
+        }
+
+    try:
+        try:
+            loop = asyncio.get_running_loop()
+        except RuntimeError:
+            loop = None
+
+        if loop and loop.is_running():
+            import concurrent.futures
+
+            with concurrent.futures.ThreadPoolExecutor(max_workers=1) as pool:
+                future = pool.submit(
+                    asyncio.run,
+                    _run_chat_query_async(
+                        user_message, processing_context, chat_history
+                    ),
+                )
+                return future.result(timeout=120)
+        else:
+            return asyncio.run(
+                _run_chat_query_async(
+                    user_message, processing_context, chat_history
+                )
+            )
+
+    except Exception as exc:
+        return {"success": False, "reply": "", "error": str(exc)}
