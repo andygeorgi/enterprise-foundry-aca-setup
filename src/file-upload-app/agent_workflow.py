@@ -17,8 +17,6 @@ to run a **three-step sequential chain**:
 Environment variables (add to ``.env``):
   AZURE_AI_PROJECT_ENDPOINT          – Foundry project endpoint
   AZURE_AI_MODEL_DEPLOYMENT_NAME     – Deployed model name (e.g. gpt-4.1)
-  AI_SEARCH_PROJECT_CONNECTION_ID    – Azure AI Search connection ID in Foundry (optional)
-  AI_SEARCH_INDEX_NAME               – Index name (default: heat-exchangers)
   SHAREPOINT_PROJECT_CONNECTION_ID   – SharePoint connection ID in Foundry (optional)
 """
 
@@ -60,37 +58,6 @@ def is_agent_available() -> bool:
     return bool(os.getenv("AZURE_AI_PROJECT_ENDPOINT"))
 
 
-def _is_ai_search_configured() -> bool:
-    """Return True when an AI Search connection is configured in the Foundry project."""
-    return bool(os.getenv("AI_SEARCH_PROJECT_CONNECTION_ID"))
-
-
-def _build_ai_search_tool() -> dict | None:
-    """Build the ``azure_ai_search`` tool definition for the agent framework.
-
-    Returns the tool dict to pass to ``create_agent(tools=...)`` or ``None``
-    when AI Search is not configured (no connection ID provided).
-    """
-    connection_id = os.getenv("AI_SEARCH_PROJECT_CONNECTION_ID", "")
-    if not connection_id:
-        return None
-
-    index_name = os.getenv("AI_SEARCH_INDEX_NAME", "heat-exchangers")
-
-    return {
-        "type": "azure_ai_search",
-        "azure_ai_search": {
-            "indexes": [
-                {
-                    "project_connection_id": connection_id,
-                    "index_name": index_name,
-                    "query_type": "vector",
-                }
-            ]
-        },
-    }
-
-
 def _build_sharepoint_tool() -> dict | None:
     """Build the ``sharepoint_grounding_preview`` tool definition.
 
@@ -123,14 +90,15 @@ You are an expert **design document analyst**.
 You receive the markdown content extracted from an uploaded design document.
 
 Your task:
-1. Determine whether the item described requires **medical cleaning** (yes or no).
+1. Determine whether the item described requires **mechanical cleaning** (hot and cold) (yes or no).
 2. Extract the **Item No** (part number / item number) from the document.
 
 You MUST respond with **only** a valid JSON object – no markdown fences, no
 commentary, no extra text.  The JSON schema is:
 
 {
-  "medical_cleaning": "yes" or "no",
+  "mechanical_cleaning_hot": "yes" or "no",
+  "mechanical_cleaning_cold": "yes" or "no",
   "item_no": "<string>"
 }
 
@@ -179,8 +147,7 @@ the question: **"Which heat exchangers are available that fit these values?"**
 When using tools:
 • **SharePoint** – search SharePoint sites for catalogues, data sheets, or
   product lists of heat exchangers that match the specification values.
-• **Azure AI Search** – search an index for heat exchangers that satisfy the
-  specification parameters.  Provide citations using: `[ref_idx†source]`.
+  Provide citations using: `[ref_idx†source]`.
 
 Your task:
 1. Use the available tools to search for heat exchangers that fit the
@@ -339,11 +306,6 @@ async def _run_sequential_analysis_async(
             tools_list.append(sharepoint_tool)
             print("  ✓ SharePoint grounding tool attached to SelectionAgent")
 
-        search_tool = _build_ai_search_tool()
-        if search_tool is not None:
-            tools_list.append(search_tool)
-            print("  ✓ Azure AI Search tool attached to SelectionAgent")
-
         if not tools_list:
             print("ℹ️  No tools configured – skipping SelectionAgent")
         else:
@@ -453,8 +415,6 @@ exchanger selection, specifications, standards, and applications.
 You have access to tools to search for information:
 • **SharePoint** – search SharePoint sites for catalogues, data sheets,
   product lists, and technical documentation about heat exchangers.
-• **Azure AI Search** – search an indexed knowledge base for heat exchanger
-  specifications and related content.
 
 When answering questions:
 1. Use the available search tools to find relevant documents and data.
@@ -495,11 +455,6 @@ async def _run_chat_query_async(
         if sharepoint_tool is not None:
             tools_list.append(sharepoint_tool)
             print("  ✓ SharePoint grounding tool attached to SeniorAgent")
-
-        search_tool = _build_ai_search_tool()
-        if search_tool is not None:
-            tools_list.append(search_tool)
-            print("  ✓ Azure AI Search tool attached to SeniorAgent")
 
         create_kwargs: dict[str, Any] = {
             "model": model_deployment,
