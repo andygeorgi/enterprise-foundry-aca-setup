@@ -11,7 +11,6 @@ All heavy lifting (Azure Doc Intelligence, file persistence) is delegated to
 """
 
 import os
-import re
 import threading
 from datetime import datetime
 
@@ -32,6 +31,9 @@ from upload_backend import (
 from agent_workflow import (
     _AGENT_FRAMEWORK_AVAILABLE,
     _import_error,
+    classify_file_by_content,
+    get_design_markers,
+    get_other_markers,
     is_agent_available,
     run_chat_query,
     run_document_analysis,
@@ -116,31 +118,16 @@ if "upload_results" not in st.session_state:
     st.session_state.upload_results = []
 if "last_analysis_content" not in st.session_state:
     st.session_state.last_analysis_content = None
-if "selected_existing_files" not in st.session_state:
-    st.session_state.selected_existing_files = []
-if "selected_design_file" not in st.session_state:
-    st.session_state.selected_design_file = None
-if "selected_other_file" not in st.session_state:
-    st.session_state.selected_other_file = None
+if "selected_files" not in st.session_state:
+    st.session_state.selected_files = []
+if "classified_design_file" not in st.session_state:
+    st.session_state.classified_design_file = None
+if "classified_other_file" not in st.session_state:
+    st.session_state.classified_other_file = None
 if "documents_processed" not in st.session_state:
     st.session_state.documents_processed = False
 if "processing_result" not in st.session_state:
     st.session_state.processing_result = None
-
-# ---------------------------------------------------------------------------
-# Filename-suffix validation (regex)
-# ---------------------------------------------------------------------------
-# Files must contain the suffix _design or _other before the file extension.
-# E.g. "floorplan_design.pdf", "report_other.png"
-_RE_DESIGN = re.compile(r"_design\.[^.]+$", re.IGNORECASE)
-_RE_OTHER = re.compile(r"_other\.[^.]+$", re.IGNORECASE)
-
-
-def validate_filename_suffix(filename: str, pattern: re.Pattern, label: str) -> str | None:
-    """Return an error message if *filename* does not match *pattern*, else None."""
-    if not pattern.search(filename):
-        return f"**{filename}** does not match the required `{label}` suffix (e.g. `myfile{label}.pdf`)"
-    return None
 
 # ---------------------------------------------------------------------------
 # Custom CSS
@@ -346,81 +333,30 @@ with col_chat:
                 "Set `AZURE_AI_PROJECT_ENDPOINT` in .env"
             )
 
-    # -- File context selector (two dropdowns: _design + _other) -----------
+    # -- File context selector (single multi-select) -----------------------
     existing_files = list_uploaded_files()
     analysed_files = [
         f for f in existing_files if f["has_analysis"] and f["md_file"]
     ]
     file_options = [f["filename"] for f in analysed_files]
 
-    st.markdown("##### 📎 Attach files to chat")
+    st.markdown("##### 📎 Attach files to process")
     st.caption(
-        "Select one `_design` file and one `_other` file. "
-        "Both are required before the agent can run."
+        "Select files to attach. Each file's first page is scanned to "
+        "determine whether it is a **design** doc or a **specs** doc.  "
+        "Both types are required before the agent can run."
     )
 
-    col_d, col_o = st.columns(2)
-    with col_d:
-        design_choice = st.selectbox(
-            "📐 Design file",
-            options=["— select —"] + file_options,
-            key="design_select",
-            help="Pick a file whose name contains `_design`.",
-        )
-    with col_o:
-        other_choice = st.selectbox(
-            "📄 Other file",
-            options=["— select —"] + file_options,
-            key="other_select",
-            help="Pick a file whose name contains `_other`.",
-        )
-
-    # -- Validate selections ------------------------------------------------
-    chat_validation_errors: list[str] = []
-    design_selected = design_choice != "— select —"
-    other_selected = other_choice != "— select —"
-
-    if design_selected:
-        err = validate_filename_suffix(design_choice, _RE_DESIGN, "_design")
-        if err:
-            chat_validation_errors.append(err)
-    if other_selected:
-        err = validate_filename_suffix(other_choice, _RE_OTHER, "_other")
-        if err:
-            chat_validation_errors.append(err)
-
-    both_files_ready = (
-        design_selected
-        and other_selected
-        and len(chat_validation_errors) == 0
+    selected_files = st.multiselect(
+        "📄 Select files",
+        options=file_options,
+        default=st.session_state.selected_files,
+        key="file_multiselect",
+        help="Pick one or more analysed files.",
     )
+    st.session_state.selected_files = selected_files
 
-    if not design_selected or not other_selected:
-        if design_selected or other_selected:
-            st.warning(
-                "⚠️ Both a `_design` file and an `_other` file must be "
-                "selected before you can use the agent."
-            )
-
-    for ve in chat_validation_errors:
-        st.error(f"❌ {ve}")
-
-    # -- Persist validated selections into session state --------------------
-    st.session_state.selected_design_file = design_choice if design_selected else None
-    st.session_state.selected_other_file = other_choice if other_selected else None
-    st.session_state.selected_existing_files = [
-        f for f in [st.session_state.selected_design_file,
-                    st.session_state.selected_other_file] if f
-    ]
-
-    # -- Reset processed flag if selections change -------------------------
-    prev_pair = st.session_state.get("_prev_file_pair")
-    curr_pair = (st.session_state.selected_design_file, st.session_state.selected_other_file)
-    if prev_pair != curr_pair:
-        st.session_state.documents_processed = False
-    st.session_state._prev_file_pair = curr_pair
-
-    # -- Load individual file content for the two agents -------------------
+    # -- Classify each selected file by first-page content -----------------
     def _load_file_content(fname: str | None) -> str | None:
         if not fname:
             return None
@@ -430,15 +366,77 @@ with col_chat:
             return f"### File: {fname}\n{md_content}"
         return None
 
-    design_content = _load_file_content(st.session_state.selected_design_file)
-    other_content = _load_file_content(st.session_state.selected_other_file)
+    classified_design: str | None = None
+    classified_other: str | None = None
+    classification_errors: list[str] = []
+    classification_info: list[str] = []
 
-    # Show attached-file summary
-    if both_files_ready:
-        st.info(
-            f"📎 **Design:** {design_choice}  ·  "
-            f"**Other:** {other_choice}"
-        )
+    for fname in selected_files:
+        md_content = load_markdown(fname + ".md") or ""
+        file_type = classify_file_by_content(md_content)
+        if file_type == "design":
+            if classified_design is not None:
+                classification_errors.append(
+                    f"Multiple design files detected — only one is allowed. "
+                    f"(**{classified_design}** and **{fname}**)"
+                )
+            else:
+                classified_design = fname
+                classification_info.append(f"📐 **Design doc:** {fname}")
+        elif file_type == "other":
+            if classified_other is not None:
+                classification_errors.append(
+                    f"Multiple specs files detected — only one is allowed. "
+                    f"(**{classified_other}** and **{fname}**)"
+                )
+            else:
+                classified_other = fname
+                classification_info.append(f"📄 **Specs doc:** {fname}")
+        else:
+            design_markers = ", ".join(f'`{m}`' for m in get_design_markers())
+            other_markers = ", ".join(f'`{m}`' for m in get_other_markers())
+            classification_errors.append(
+                f"**{fname}** — could not classify. First page must contain "
+                f"one of: {design_markers} (design) or {other_markers} (specs)."
+            )
+
+    # Show classification results
+    for info in classification_info:
+        st.info(info)
+    for err in classification_errors:
+        st.error(f"❌ {err}")
+
+    both_files_ready = (
+        classified_design is not None
+        and classified_other is not None
+        and len(classification_errors) == 0
+    )
+
+    if selected_files and not both_files_ready and not classification_errors:
+        missing = []
+        if classified_design is None:
+            missing.append("design")
+        if classified_other is None:
+            missing.append("specs")
+        if missing:
+            st.warning(
+                f"⚠️ Still need a **{' and a '.join(missing)}** file. "
+                "Select more files above."
+            )
+
+    # Persist into session state
+    st.session_state.classified_design_file = classified_design
+    st.session_state.classified_other_file = classified_other
+
+    # -- Reset processed flag if selections change -------------------------
+    prev_pair = st.session_state.get("_prev_file_pair")
+    curr_pair = (classified_design, classified_other)
+    if prev_pair != curr_pair:
+        st.session_state.documents_processed = False
+    st.session_state._prev_file_pair = curr_pair
+
+    design_content = _load_file_content(classified_design)
+    other_content = _load_file_content(classified_other)
 
     # -- Process button (blinking green when both files ready) --------------
     if both_files_ready and not st.session_state.documents_processed:
@@ -482,7 +480,7 @@ with col_chat:
             "🤖 Process uploaded files",
             use_container_width=True,
             disabled=True,
-            help="Select both a _design and an _other file first.",
+            help="Select files that classify as one design doc and one specs doc.",
         )
 
     # -- Chat history -------------------------------------------------------

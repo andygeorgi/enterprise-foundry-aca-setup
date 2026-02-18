@@ -18,6 +18,8 @@ Environment variables (add to ``.env``):
   AZURE_AI_PROJECT_ENDPOINT          – Foundry project endpoint
   AZURE_AI_MODEL_DEPLOYMENT_NAME     – Deployed model name (e.g. gpt-4.1)
   SHAREPOINT_PROJECT_CONNECTION_ID   – SharePoint connection ID in Foundry (optional)
+  DESIGN_FILE_MARKERS                – Pipe-separated markers for design docs (required)
+  OTHER_FILE_MARKERS                 – Pipe-separated markers for other/specs docs (required)
 """
 
 import asyncio
@@ -56,6 +58,41 @@ def is_agent_available() -> bool:
     if not _AGENT_FRAMEWORK_AVAILABLE:
         return False
     return bool(os.getenv("AZURE_AI_PROJECT_ENDPOINT"))
+
+
+# ---------------------------------------------------------------------------
+# Content-based file classification
+# ---------------------------------------------------------------------------
+
+def get_design_markers() -> list[str]:
+    """Return the list of first-page markers that identify a design document."""
+    raw = os.getenv("DESIGN_FILE_MARKERS", "")
+    return [m.strip() for m in raw.split("|") if m.strip()]
+
+
+def get_other_markers() -> list[str]:
+    """Return the list of first-page markers that identify an other/specs document."""
+    raw = os.getenv("OTHER_FILE_MARKERS", "")
+    return [m.strip() for m in raw.split("|") if m.strip()]
+
+
+def classify_file_by_content(md_content: str) -> str | None:
+    """Classify a file by scanning its first page content.
+
+    Returns ``'design'``, ``'other'``, or ``None`` if no marker matched.
+    Only the first ~3000 characters are checked (approximate first page).
+    """
+    first_page = md_content[:3000]
+
+    for marker in get_design_markers():
+        if marker.lower() in first_page.lower():
+            return "design"
+
+    for marker in get_other_markers():
+        if marker.lower() in first_page.lower():
+            return "other"
+
+    return None
 
 
 def _build_sharepoint_tool() -> dict | None:
