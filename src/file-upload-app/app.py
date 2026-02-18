@@ -2,9 +2,9 @@
 """
 File Upload App – Streamlit front-end
 ======================================
-Two-column layout:
-  • LEFT  – File upload with Azure Document Intelligence analysis
-  • RIGHT – Chat interface with multi-agent orchestrator
+Tabbed full-width layout:
+  • Tab 1 – File upload with Azure Document Intelligence analysis
+  • Tab 2 – Chat interface with multi-agent orchestrator
 
 All heavy lifting (Azure Doc Intelligence, file persistence) is delegated to
 ``upload_backend.py``.
@@ -247,12 +247,12 @@ st.markdown(
 )
 
 # ---------------------------------------------------------------------------
-# Two-column layout
+# Tabbed layout (full width)
 # ---------------------------------------------------------------------------
-col_upload, col_chat = st.columns([1, 1], gap="large")
+tab_upload, tab_chat = st.tabs(["📁 Upload & Analysis", "💬 Agent Chat"])
 
-# ===========================  LEFT COLUMN – FILE UPLOAD  ===================
-with col_upload:
+# ===========================  TAB 1 – FILE UPLOAD  =========================
+with tab_upload:
     st.subheader("📁 File Upload & Analysis")
 
     # File uploader widget
@@ -327,10 +327,8 @@ with col_upload:
         st.info("No files uploaded yet.")
 
 
-# ===========================  RIGHT COLUMN – CHAT  =========================
-with col_chat:
-    st.subheader("💬 Agent Chat")
-
+# ===========================  TAB 2 – CHAT  ================================
+with tab_chat:
     # Agent status indicator
     if is_agent_available():
         st.caption(
@@ -499,7 +497,7 @@ with col_chat:
         )
 
     # -- Chat history -------------------------------------------------------
-    chat_container = st.container(height=400)
+    chat_container = st.container(height=500)
     with chat_container:
         for msg in st.session_state.chat_messages:
             with st.chat_message(msg["role"]):
