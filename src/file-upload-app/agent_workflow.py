@@ -18,8 +18,8 @@ Environment variables (add to ``.env``):
   AZURE_AI_PROJECT_ENDPOINT          – Foundry project endpoint
   AZURE_AI_MODEL_DEPLOYMENT_NAME     – Deployed model name (e.g. gpt-4.1)
   SHAREPOINT_PROJECT_CONNECTION_ID   – SharePoint connection ID in Foundry (optional)
-  DESIGN_FILE_MARKERS                – Pipe-separated markers for design docs (required)
-  OTHER_FILE_MARKERS                 – Pipe-separated markers for other/specs docs (required)
+  DESIGN_FILE_MARKERS                – JSON array of markers for design docs (required)
+  OTHER_FILE_MARKERS                 – JSON array of markers for other/specs docs (required)
 """
 
 import asyncio
@@ -66,14 +66,26 @@ def is_agent_available() -> bool:
 
 def get_design_markers() -> list[str]:
     """Return the list of first-page markers that identify a design document."""
-    raw = os.getenv("DESIGN_FILE_MARKERS", "")
-    return [m.strip() for m in raw.split("|") if m.strip()]
+    raw = os.getenv("DESIGN_FILE_MARKERS", "[]")
+    try:
+        markers = json.loads(raw)
+    except json.JSONDecodeError:
+        markers = [raw]  # fallback: treat entire value as a single marker
+    if isinstance(markers, str):
+        markers = [markers]
+    return [m.strip() for m in markers if isinstance(m, str) and m.strip()]
 
 
 def get_other_markers() -> list[str]:
     """Return the list of first-page markers that identify an other/specs document."""
-    raw = os.getenv("OTHER_FILE_MARKERS", "")
-    return [m.strip() for m in raw.split("|") if m.strip()]
+    raw = os.getenv("OTHER_FILE_MARKERS", "[]")
+    try:
+        markers = json.loads(raw)
+    except json.JSONDecodeError:
+        markers = [raw]  # fallback: treat entire value as a single marker
+    if isinstance(markers, str):
+        markers = [markers]
+    return [m.strip() for m in markers if isinstance(m, str) and m.strip()]
 
 
 def classify_file_by_content(md_content: str) -> str | None:
@@ -175,7 +187,7 @@ You are a **selection agent** that finds available heat exchangers matching
 a set of combined specifications.
 
 You receive a **combined specification JSON** with keys: item_no,
-medical_cleaning, min_pressure, max_pressure, pressure_unit,
+mechanical_cleaning_hot, mechanical_cleaning_cold, min_pressure, max_pressure, pressure_unit,
 min_temperature, max_temperature, temperature_unit.
 
 You have access to tools to search for heat exchangers.  Use them to answer
@@ -188,8 +200,7 @@ When using tools:
 
 Your task:
 1. Use the available tools to search for heat exchangers that fit the
-   provided specification (pressure range, temperature range, medical
-   cleaning requirement).
+   provided specification (pressure range, temperature range, mechanical cleaning requirement).
 2. Return a JSON object with the search results.
 
 You MUST respond with **only** a valid JSON object – no markdown fences,
@@ -214,7 +225,8 @@ You are an expert **heat exchanger calculation analyst**.
 
 You receive:
 - The **combined specification** from the previous pipeline steps (item_no,
-  medical_cleaning, pressure/temperature ranges, matching heat exchangers).
+  mechanical_cleaning_hot, mechanical_cleaning_cold, min_pressure, max_pressure, pressure_unit,
+  min_temperature, max_temperature, temperature_unit, matching heat exchangers).
 - The **markdown content** of a heat exchanger calculation / estimation
   document (e.g. a thermal design calculation sheet).
 
