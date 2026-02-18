@@ -202,7 +202,13 @@ When using tools:
 Your task:
 1. Use the available tools to search for heat exchangers that fit the
    provided specification (pressure range, temperature range, mechanical cleaning requirement).
-2. Return a JSON object with the search results.
+2. If an **exact match** exists (all criteria met), return it.
+3. If **no exact match** exists, return the **closest matching** heat
+   exchangers instead.  In the ``description`` field, clearly state
+   **which criteria are NOT met** (e.g. "Pressure rating is 10 bar —
+   below the required 16 bar", "No mechanical cleaning
+   certification").
+4. Return a JSON object with the search results.
 
 You MUST respond with **only** a valid JSON object – no markdown fences,
 no commentary, no extra text.  The JSON schema is:
@@ -211,13 +217,14 @@ no commentary, no extra text.  The JSON schema is:
   "matching_heat_exchangers": [
     {
       "name": "<string>",
-      "description": "<string>",
-      "source": "<string>"
+      "description": "<string – include any unmet criteria here>",
+      "source": "<string>",
+      "exact_match": true or false
     }
   ]
 }
 
-If no matching heat exchangers are found, return:
+If no matching or close heat exchangers are found at all, return:
 {"matching_heat_exchangers": []}
 """
 
