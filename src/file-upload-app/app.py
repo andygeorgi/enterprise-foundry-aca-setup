@@ -498,87 +498,84 @@ with col_chat:
             help="Select files that classify as one design doc and one specs doc.",
         )
 
-    # -- Estimation upload (appears in chat area after processing) ----------
-    if st.session_state.documents_processed and not st.session_state.estimation_uploaded:
-        st.divider()
-        st.markdown(
-            "💰 **EstimationAgent** — Upload a heat exchanger calculation "
-            "document to verify it against the extracted specifications."
-        )
-        estimation_file = st.file_uploader(
-            "Upload calculation document",
-            type=list(ALLOWED_EXTENSIONS),
-            accept_multiple_files=False,
-            key="estimation_uploader",
-            help="Upload a thermal design calculation sheet for analysis.",
-        )
-        if estimation_file is not None:
-            st.markdown('<div class="blink-green">', unsafe_allow_html=True)
-            if st.button(
-                "💰 Analyse calculation",
-                type="primary",
-                use_container_width=True,
-                key="estimation_process_btn",
-            ):
-                with st.spinner("Processing estimation document…"):
-                    # 1. Save & extract via Document Intelligence
-                    try:
-                        est_result = save_uploaded_bytes(
-                            estimation_file.read(), estimation_file.name
-                        )
-                    except Exception as exc:
-                        st.error(f"❌ Upload failed: {exc}")
-                        est_result = None
-
-                    if est_result and est_result.get("processed"):
-                        est_md = load_markdown(est_result.get("md_file", "")) or ""
-
-                        # 2. Run EstimationAgent
-                        est_analysis = run_estimation_analysis(
-                            estimation_content=est_md,
-                            processing_context=st.session_state.processing_result or "",
-                        )
-
-                        if est_analysis["success"]:
-                            # Store in processing result
-                            est_text = est_analysis["estimation_analysis"]
-                            st.session_state.processing_result = (
-                                (st.session_state.processing_result or "")
-                                + f"\n\nEstimation Analysis:\n{est_text}"
-                            )
-                            st.session_state.estimation_result = est_text
-                            st.session_state.estimation_uploaded = True
-
-                            # Add to chat
-                            st.session_state.chat_messages.append({
-                                "role": "assistant",
-                                "content": (
-                                    "**💰 EstimationAgent** — calculation analysis\n\n"
-                                    f"```json\n{est_text}\n```"
-                                ),
-                            })
-                            st.rerun()
-                        else:
-                            st.error(
-                                f"EstimationAgent error: "
-                                f"{est_analysis.get('error', 'Unknown')}"
-                            )
-                    elif est_result:
-                        st.error(
-                            f"Document extraction failed: "
-                            f"{est_result.get('error', 'Unknown')}"
-                        )
-            st.markdown('</div>', unsafe_allow_html=True)
-
-    elif st.session_state.estimation_uploaded:
-        st.success("✅ Calculation analysed.")
-
     # -- Chat history -------------------------------------------------------
     chat_container = st.container(height=400)
     with chat_container:
         for msg in st.session_state.chat_messages:
             with st.chat_message(msg["role"]):
                 st.markdown(msg["content"])
+
+        # -- Estimation upload (inline in chat after last message) ----------
+        if st.session_state.documents_processed and not st.session_state.estimation_uploaded:
+            st.divider()
+            st.markdown(
+                "💰 **EstimationAgent** — Upload a heat exchanger calculation "
+                "document to verify it against the extracted specifications."
+            )
+            estimation_file = st.file_uploader(
+                "Upload calculation document",
+                type=list(ALLOWED_EXTENSIONS),
+                accept_multiple_files=False,
+                key="estimation_uploader",
+                help="Upload a thermal design calculation sheet for analysis.",
+            )
+            if estimation_file is not None:
+                st.markdown('<div class="blink-green">', unsafe_allow_html=True)
+                if st.button(
+                    "💰 Analyse calculation",
+                    type="primary",
+                    use_container_width=True,
+                    key="estimation_process_btn",
+                ):
+                    with st.spinner("Processing estimation document…"):
+                        # 1. Save & extract via Document Intelligence
+                        try:
+                            est_result = save_uploaded_bytes(
+                                estimation_file.read(), estimation_file.name
+                            )
+                        except Exception as exc:
+                            st.error(f"❌ Upload failed: {exc}")
+                            est_result = None
+
+                        if est_result and est_result.get("processed"):
+                            est_md = load_markdown(est_result.get("md_file", "")) or ""
+
+                            # 2. Run EstimationAgent
+                            est_analysis = run_estimation_analysis(
+                                estimation_content=est_md,
+                                processing_context=st.session_state.processing_result or "",
+                            )
+
+                            if est_analysis["success"]:
+                                # Store in processing result
+                                est_text = est_analysis["estimation_analysis"]
+                                st.session_state.processing_result = (
+                                    (st.session_state.processing_result or "")
+                                    + f"\n\nEstimation Analysis:\n{est_text}"
+                                )
+                                st.session_state.estimation_result = est_text
+                                st.session_state.estimation_uploaded = True
+
+                                # Add to chat
+                                st.session_state.chat_messages.append({
+                                    "role": "assistant",
+                                    "content": (
+                                        "**💰 EstimationAgent** — calculation analysis\n\n"
+                                        f"```json\n{est_text}\n```"
+                                    ),
+                                })
+                                st.rerun()
+                            else:
+                                st.error(
+                                    f"EstimationAgent error: "
+                                    f"{est_analysis.get('error', 'Unknown')}"
+                                )
+                        elif est_result:
+                            st.error(
+                                f"Document extraction failed: "
+                                f"{est_result.get('error', 'Unknown')}"
+                            )
+                st.markdown('</div>', unsafe_allow_html=True)
 
     # -- Chat options -------------------------------------------------------
     if st.session_state.processing_result:

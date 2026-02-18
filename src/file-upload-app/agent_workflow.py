@@ -6,7 +6,8 @@ Agent Workflow – Sequential orchestration (Foundry v2)
 Uses Microsoft **agent-framework** with ``AzureAIProjectAgentProvider``
 to run a **three-step sequential chain**:
 
-1. **DesignDocAgent**   – extracts ``medical_cleaning`` (yes/no) and
+1. **DesignDocAgent**   – extracts ``mechanical_cleaning_hot``,
+   ``mechanical_cleaning_cold`` (yes/no) and
    ``item_no`` from the design document.
 2. **OtherDocAgent**    – given the Item No, extracts ``min_pressure``,
    ``max_pressure``, ``min_temperature``, ``max_temperature`` from
@@ -325,7 +326,7 @@ async def _run_sequential_analysis_async(
 ) -> dict:
     """
     Run a three-step sequential chain:
-      1. DesignDocAgent  → {medical_cleaning, item_no}
+      1. DesignDocAgent  → {mechanical_cleaning_hot, mechanical_cleaning_cold, item_no}
       2. OtherDocAgent   → {min/max pressure/temperature}
       3. SelectionAgent  → merged final JSON
 
@@ -401,7 +402,8 @@ async def _run_sequential_analysis_async(
         combined: dict[str, Any] = {
             "status": "complete",
             "item_no": design_json.get("item_no") or other_json.get("item_no"),
-            "medical_cleaning": design_json.get("medical_cleaning"),
+            "mechanical_cleaning_hot": design_json.get("mechanical_cleaning_hot"),
+            "mechanical_cleaning_cold": design_json.get("mechanical_cleaning_cold"),
             "min_pressure": other_json.get("min_pressure"),
             "max_pressure": other_json.get("max_pressure"),
             "pressure_unit": other_json.get("pressure_unit"),
@@ -448,7 +450,7 @@ async def _run_sequential_analysis_async(
                 f"{json.dumps(combined, indent=2)}\n```\n\n"
                 f"Which heat exchangers are available that fit these values? "
                 f"Search for heat exchangers matching the pressure range, "
-                f"temperature range, and medical cleaning requirement above."
+                f"temperature range, and mechanical cleaning requirement above."
             )
             selection_text = selection_resp.text or ""
             selection_json = _extract_json(selection_text)
