@@ -43,7 +43,7 @@ _import_error: str | None = None
 
 try:
     from agent_framework.azure import AzureAIProjectAgentProvider
-    from azure.identity.aio import AzureCliCredential
+    from azure.identity.aio import DefaultAzureCredential
 
     _AGENT_FRAMEWORK_AVAILABLE = True
 except ImportError as exc:
@@ -331,7 +331,7 @@ async def _run_sequential_analysis_async(
     }
 
     async with (
-        AzureCliCredential(process_timeout=30) as credential,
+        DefaultAzureCredential() as credential,
         AzureAIProjectAgentProvider(
             credential=credential,
             project_endpoint=project_endpoint,
@@ -535,7 +535,7 @@ async def _run_estimation_analysis_async(
     }
 
     async with (
-        AzureCliCredential(process_timeout=30) as credential,
+        DefaultAzureCredential() as credential,
         AzureAIProjectAgentProvider(
             credential=credential,
             project_endpoint=project_endpoint,
@@ -644,7 +644,7 @@ async def _run_chat_query_async(
     result: dict[str, Any] = {"success": True, "reply": "", "error": None}
 
     async with (
-        AzureCliCredential(process_timeout=30) as credential,
+        DefaultAzureCredential() as credential,
         AzureAIProjectAgentProvider(
             credential=credential,
             project_endpoint=project_endpoint,

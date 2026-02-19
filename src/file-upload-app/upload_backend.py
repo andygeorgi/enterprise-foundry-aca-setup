@@ -14,7 +14,7 @@ from pathlib import Path
 from werkzeug.utils import secure_filename
 from azure.ai.documentintelligence import DocumentIntelligenceClient
 from azure.ai.documentintelligence.models import AnalyzeDocumentRequest, DocumentContentFormat
-from azure.identity import AzureCliCredential
+from azure.identity import DefaultAzureCredential
 from dotenv import load_dotenv
 
 # Load .env from the same directory as this file (src/file-upload-app/.env)
@@ -51,13 +51,11 @@ def _init_docintel_client():
         return
 
     try:
-        # Using AzureCliCredential for local development.
-        # Switch back to DefaultAzureCredential for deployed environments.
-        credential = AzureCliCredential()
+        credential = DefaultAzureCredential()
         doc_intel_client = DocumentIntelligenceClient(
             endpoint=DOCINTEL_ENDPOINT, credential=credential
         )
-        print("✓ Document Intelligence client initialised with AzureCliCredential")
+        print("✓ Document Intelligence client initialised with DefaultAzureCredential")
     except Exception as e:
         print(
             f"⚠️  Warning: Could not initialise Document Intelligence client: {e}")
