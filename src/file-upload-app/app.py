@@ -208,8 +208,16 @@ def _split_agent_replies(result: dict) -> list[dict]:
         msgs.append({
             "role": "assistant",
             "content": (
-                "**🎯 SelectionAgent** — consolidated result\n\n"
+                "**📊 Combined Specification**\n\n"
                 f"```json\n{result['selection']}\n```"
+            ),
+        })
+    if result.get("selection_reply"):
+        msgs.append({
+            "role": "assistant",
+            "content": (
+                "**🎯 SelectionAgent** — heat exchanger search results\n\n"
+                + result["selection_reply"]
             ),
         })
     if result.get("estimation_analysis"):
@@ -472,6 +480,8 @@ with tab_chat:
                         proc_parts.append(f"Specifications Analysis:\n{result['other_analysis']}")
                     if result.get("selection"):
                         proc_parts.append(f"Combined Selection:\n{result['selection']}")
+                    if result.get("selection_reply"):
+                        proc_parts.append(f"SelectionAgent Reply:\n{result['selection_reply']}")
                     st.session_state.processing_result = "\n\n".join(proc_parts)
 
                     for agent_msg in _split_agent_replies(result):

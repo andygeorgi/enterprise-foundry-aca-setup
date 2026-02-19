@@ -200,11 +200,34 @@ Your task:
    provided specification (pressure range, temperature range, mechanical cleaning requirement).
 2. If an **exact match** exists (all criteria met), return it.
 3. If **no exact match** exists, return the **closest matching** heat
-   exchangers instead.  In the ``description`` field, clearly state
-   **which criteria are NOT met** (e.g. "Pressure rating is 10 bar —
-   below the required 16 bar", "No mechanical cleaning
-   certification").
-4. For mechanical cleaning, only enforcement requirements that are YES, when it is not required (i.e. NO), it is also fine to find a type that allows either.
+   exchangers instead.  Clearly state **which criteria are NOT met**
+   (e.g. "Pressure rating is 10 bar — below the required 16 bar",
+   "No mechanical cleaning certification").
+4. For mechanical cleaning, only enforce requirements that are YES.
+   When it is not required (i.e. NO), it is also fine to find a type
+   that allows either.
+
+**Response format — you MUST respond in well-formatted Markdown (NOT JSON).**
+
+Structure your answer like this:
+
+## Search Results
+
+*(Brief summary of what was found.)*
+
+### 1. <Heat Exchanger Name / Model>
+- **Type:** …
+- **Pressure rating:** …
+- **Temperature range:** …
+- **Mechanical cleaning:** …
+- **Match status:** ✅ All criteria met / ⚠️ Partial match
+- **Notes:** *(any caveats or unmet criteria)*
+- **Source:** [ref_idx†source]
+
+*(Repeat for each matching heat exchanger.)*
+
+### Summary
+*(Overall recommendation: which option best fits the specification and why.)*
 """
 
 _ESTIMATION_AGENT_INSTRUCTIONS = """\
@@ -327,6 +350,7 @@ async def _run_sequential_analysis_async(
         "design_analysis": "",
         "other_analysis": "",
         "selection": "",
+        "selection_reply": "",
         "messages": [],
     }
 
@@ -439,21 +463,15 @@ async def _run_sequential_analysis_async(
                 f"temperature range, and mechanical cleaning requirement above."
             )
             selection_text = selection_resp.text or ""
-            selection_json = _extract_json(selection_text)
 
-            # Merge search results into combined output
-            if selection_json.get("matching_heat_exchangers"):
-                combined["matching_heat_exchangers"] = selection_json[
-                    "matching_heat_exchangers"
-                ]
-                result["selection"] = json.dumps(combined, indent=2)
-
-            print(f"  ✓ SelectionAgent result: {selection_json}")
+            # SelectionAgent returns free-text / markdown (not JSON)
+            result["selection_reply"] = selection_text
+            print(f"  ✓ SelectionAgent replied ({len(selection_text)} chars)")
 
             result["messages"].append({
                 "author": "SelectionAgent",
                 "role": "assistant",
-                "text": json.dumps(selection_json, indent=2),
+                "text": selection_text,
             })
 
     return result
@@ -481,6 +499,7 @@ def run_document_analysis(
             "design_analysis": "",
             "other_analysis": "",
             "selection": "",
+            "selection_reply": "",
             "messages": [],
         }
 
@@ -512,6 +531,7 @@ def run_document_analysis(
             "design_analysis": "",
             "other_analysis": "",
             "selection": "",
+            "selection_reply": "",
             "messages": [],
         }
 
